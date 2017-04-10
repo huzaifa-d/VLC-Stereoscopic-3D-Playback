@@ -555,6 +555,10 @@ static int Open(vlc_object_t *object)
 {
     vout_display_t *vd = (vout_display_t *)object;
 
+    if ( vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE ||
+         vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE_10B )
+        return VLC_EGENERIC;
+
 #if !VLC_WINSTORE_APP
     int ret = OpenHwnd(vd);
 #else
