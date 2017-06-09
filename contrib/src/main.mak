@@ -43,6 +43,10 @@ ARCH := $(shell $(SRC)/get-arch.sh $(HOST))
 
 ifeq ($(ARCH)-$(HAVE_WIN32),x86_64-1)
 HAVE_WIN64 := 1
+CONTRIB_DIR := win64
+endif
+ifeq ($(ARCH)-$(HAVE_WIN32),i386-1)
+CONTRIB_DIR := win32
 endif
 
 ifdef HAVE_CROSS_COMPILE
@@ -402,7 +406,11 @@ distclean: clean
 	$(RM) config.mak
 	unlink Makefile
 
-PREBUILT_URL=http://download.videolan.org/pub/videolan/contrib/$(HOST)/vlc-contrib-$(HOST)-latest.tar.bz2
+ifdef CONTRIB_DIR
+PREBUILT_URL=https://nightlies.videolan.org/build/$(CONTRIB_DIR)/last/vlc-contrib-$(HOST)-$(DATE).tar.bz2
+else
+PREBUILT_URL=ftp://ftp.videolan.org/pub/videolan/contrib/$(HOST)/vlc-contrib-$(HOST)-latest.tar.bz2
+endif
 
 vlc-contrib-$(HOST)-latest.tar.bz2:
 	$(call download,$(PREBUILT_URL))

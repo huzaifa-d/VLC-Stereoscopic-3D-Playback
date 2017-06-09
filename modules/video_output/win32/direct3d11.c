@@ -60,6 +60,8 @@ DEFINE_GUID(GUID_SWAPCHAIN_HEIGHT, 0x6ea976a0, 0x9d60, 0x4bb7, 0xa5, 0xa9, 0x7d,
 
 static int  Open(vlc_object_t *);
 static void Close(vlc_object_t *);
+bool StereoEnabled;
+int DynDebug = 1;
 
 #define D3D11_HELP N_("Recommended video output for Windows 8 and later versions")
 #define HW_BLENDING_TEXT N_("Use hardware blending support")
@@ -153,6 +155,7 @@ struct vout_display_sys_t
     picture_sys_t            stagingSys;
 
     ID3D11RenderTargetView   *d3drenderTargetView;
+    ID3D11RenderTargetView   *d3drenderTargetViewRightEye;
     ID3D11DepthStencilView   *d3ddepthStencilView;
 
     ID3D11VertexShader        *flatVSShader;
@@ -508,6 +511,11 @@ static bool GetRect(const vout_display_sys_win32_t *p_sys, RECT *out)
 static int Open(vlc_object_t *object)
 {
     vout_display_t *vd = (vout_display_t *)object;
+
+    //Steve's patch
+    if ( vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE ||
+            vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE_10B )
+            return VLC_EGENERIC;
 
 #if !VLC_WINSTORE_APP
     int ret = OpenHwnd(vd);
@@ -900,7 +908,39 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
        return hr;
     }
 
+    D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewDesc;
+    memset(&renderTargetViewDesc, 0, sizeof(renderTargetViewDesc));
+    renderTargetViewDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    renderTargetViewDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    renderTargetViewDesc.Texture2D.MipSlice = 0;
+    //renderTargetViewDesc.Texture2DArray.MipSlice = 0;
+    //renderTargetViewDesc.Texture2DArray.FirstArraySlice = 0;
+    //renderTargetViewDesc.Texture2DArray.ArraySize = 1;
+
+    D3D11_RENDER_TARGET_VIEW_DESC  *p_renderTargetViewDesc;
+    p_renderTargetViewDesc = &renderTargetViewDesc;
+
     hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, NULL, &sys->d3drenderTargetView);
+
+    //hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, p_renderTargetViewDesc, &sys->d3drenderTargetView);
+
+    if (StereoEnabled)
+    {
+        D3D11_RENDER_TARGET_VIEW_DESC renderTargetViewRightDesc;
+        memset(&renderTargetViewRightDesc, 0, sizeof(renderTargetViewRightDesc));
+        renderTargetViewRightDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        renderTargetViewRightDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        renderTargetViewDesc.Texture2D.MipSlice = 0;
+        renderTargetViewRightDesc.Texture2DArray.MipSlice = 0;
+        //renderTargetViewRightDesc.Texture2DArray.FirstArraySlice = 1;
+        //renderTargetViewRightDesc.Texture2DArray.ArraySize = 1;
+
+        //hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, &renderTargetViewRightDesc, &sys->d3drenderTargetViewRightEye);
+        //hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, NULL, &sys->d3drenderTargetViewRightEye);
+
+    }
+
+
     ID3D11Texture2D_Release(pBackBuffer);
     if (FAILED(hr)) {
         msg_Err(vd, "Failed to create the target view. (hr=0x%lX)", hr);
@@ -1226,7 +1266,8 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
 
     /* no ID3D11Device operations should come here */
 
-    ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetView, sys->d3ddepthStencilView);
+    //ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetView, sys->d3ddepthStencilView);
+    ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetView, NULL);
 
     ID3D11DeviceContext_ClearDepthStencilView(sys->d3dcontext, sys->d3ddepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
@@ -1518,6 +1559,8 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 #endif
     };
 
+    //creationFlags = 34;
+
     for (UINT driver = 0; driver < ARRAYSIZE(driverAttempts); driver++) {
         D3D_FEATURE_LEVEL i_feature_level;
         hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
@@ -1550,6 +1593,22 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
        msg_Err(vd, "Could not get the DXGI Factory. (hr=0x%lX)", hr);
        return VLC_EGENERIC;
     }
+
+    //bool StereoEnabled = dxgifactory->IsWindowedStereoEnabled();
+    StereoEnabled = IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
+    if (StereoEnabled)
+    {
+        scd.Stereo = 1;
+        scd.Scaling = DXGI_SCALING_NONE;
+        //Won't be needed
+        //scd.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
+        //scd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
+        //scd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+        scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL; // All Windows Store apps must use this SwapEffect.
+        scd.Flags = 0;
+    }
+
 
     hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3ddevice,
                                               sys->sys.hvideownd, &scd, NULL, NULL, &sys->dxgiswapChain);
