@@ -50,11 +50,11 @@ dxgi12: .sum-d3d11
 
 $(DST_D3D11_H): d3d11
 	mkdir -p -- "$(PREFIX)/include/"
-	$(WIDL) -DBOOL=WINBOOL -I$(IDL_INC_PATH) -h -o $@ $</d3d11.idl
+	$(WIDL) -DBOOL=WINBOOL -W -d 2 -I$(IDL_INC_PATH) -h -o $@ $</d3d11.idl
 
 $(DST_DXGIDEBUG_H): $(TARBALLS)/dxgidebug.idl
 	mkdir -p -- "$(PREFIX)/include/"
-	$(WIDL) -DBOOL=WINBOOL -I$(IDL_INC_PATH) -h -o $@ $<
+	$(WIDL) -DBOOL=WINBOOL -W -d 2 -I$(IDL_INC_PATH) -h -o $@ $<
 
 $(DST_DXGITYPE_H): $(TARBALLS)/dxgitype.h
 	mkdir -p -- "$(PREFIX)/include/"
@@ -62,19 +62,19 @@ $(DST_DXGITYPE_H): $(TARBALLS)/dxgitype.h
 
 $(DST_DXGI12_H): dxgi12
 	mkdir -p -- "$(PREFIX)/include/"
-	$(WIDL) -DBOOL=WINBOOL -I$(IDL_INC_PATH) -h -o $@ $</dxgi1_2.idl
+	$(WIDL) -DBOOL=WINBOOL -W -d 2 -I$(IDL_INC_PATH) -h -o $@ $</dxgi1_2.idl
 
 $(DST_DXGI13_H): $(SRC)/d3d11/dxgi1_3.idl $(DST_DXGI12_H)
 	mkdir -p -- "$(PREFIX)/include/"
-	$(WIDL) -DBOOL=WINBOOL -Idxgi12 -I$(IDL_INC_PATH) -h -o $@ $<
+	$(WIDL) -DBOOL=WINBOOL -W -d 2 -Idxgi12 -I$(IDL_INC_PATH) -h -o $@ $<
 
 $(DST_DXGI14_H): $(SRC)/d3d11/dxgi1_4.idl $(DST_DXGI13_H)
 	mkdir -p -- "$(PREFIX)/include/"
-	$(WIDL) -DBOOL=WINBOOL -Idxgi12 -I$(IDL_INC_PATH) -h -o $@ $<
+	$(WIDL) -DBOOL=WINBOOL -W -d 2 -Idxgi12 -I$(IDL_INC_PATH) -h -o $@ $<
 
 $(DST_DXGI15_H): $(SRC)/d3d11/dxgi1_5.idl $(DST_DXGI14_H)
 	mkdir -p -- "$(PREFIX)/include/"
-	$(WIDL) -DBOOL=WINBOOL -Idxgi12 -I$(IDL_INC_PATH) -h -o $@ $<
+	$(WIDL) -DBOOL=WINBOOL -W -d 2 -Idxgi12 -I$(IDL_INC_PATH) -h -o $@ $<
 
 .dxgitype: $(DST_DXGITYPE_H)
 	touch $@
