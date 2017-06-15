@@ -41,7 +41,6 @@
 #include <initguid.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
-//#include "C:\Program Files (x86)\Windows Kits\8.0\Include\shared\dxgi1_2.h"
 #include <dxgi1_5.h>
 #include <d3dcompiler.h>
 #include <d2d1_1.h>
@@ -176,6 +175,7 @@ struct vout_display_sys_t
      * Uses a Texture2D with slices rather than a Texture2DArray for the decoder */
     bool                     legacy_shader;
 	bool					 stereo_enabled;
+    bool                     showRightEye;
 
     // SPU
     vlc_fourcc_t             pSubpictureChromas[2];
@@ -525,8 +525,8 @@ static int Open(vlc_object_t *object)
     vout_display_t *vd = (vout_display_t *)object;
 
     if ( vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE ||
-            vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE_10B )
-           return VLC_EGENERIC;
+         vd->source.i_chroma == VLC_CODEC_D3D9_OPAQUE_10B )
+        return VLC_EGENERIC;
 
 #if !VLC_WINSTORE_APP
     int ret = OpenHwnd(vd);
@@ -888,7 +888,7 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     HRESULT hr;
     ID3D11Texture2D* pDepthStencil;
     ID3D11Texture2D* pBackBuffer;
-	ID3D11Texture2D* pBackBuffer2;
+	//ID3D11Texture2D* pBackBuffer2;
     RECT rect;
 #if VLC_WINSTORE_APP
     if (!GetRect(&sys->sys, &rect))
@@ -914,7 +914,7 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     //hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 0, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
 
     //hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 2, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
-    //Temporary hack to view only half for testing
+    //Temporary hack to view only half for testing to be used here
       hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 2, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
        msg_Err(vd, "Failed to resize the backbuffer. (hr=0x%lX)", hr);
@@ -941,9 +941,7 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     p_renderTargetViewDesc = &renderTargetViewDesc;
 
     //hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, NULL, &sys->d3drenderTargetView);
-
     hr = ID3D11Device_CreateRenderTargetView(sys->d3d11device, (ID3D11Resource *)pBackBuffer, p_renderTargetViewDesc, &sys->d3drenderTargetView);
-	//hr = ID3D11Device_CreateRenderTargetView(sys->d3d11device, (ID3D11Resource *)pBackBuffer2, p_renderTargetViewDesc, &sys->d3drenderTargetView);
 
     if (sys->stereo_enabled)
     {
@@ -958,14 +956,6 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
 
         hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, &renderTargetViewRightDesc, &sys->d3drenderTargetViewRightEye);
         //hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, NULL, &sys->d3drenderTargetViewRightEye);
-
-
-
-		//ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-		//	sys->stagingSys.resource[KNOWN_DXGI_INDEX],
-		//	0, 0, 0, 0,
-		//	p_sys->resource[KNOWN_DXGI_INDEX],
-		//	p_sys->slice_index, &box);
 
     }
 
@@ -1016,13 +1006,13 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
        return hr;
     }
 
-	D3D11_VIEWPORT viewport;
-	viewport.TopLeftX = 0.0f;
-	viewport.TopLeftY = 0.0f;
-	viewport.Width = i_width;
-	viewport.Height = i_height;
-	viewport.MinDepth = D3D11_MIN_DEPTH;
-	viewport.MaxDepth = D3D11_MAX_DEPTH;
+	//D3D11_VIEWPORT viewport;
+	//viewport.TopLeftX = 0.0f;
+	//viewport.TopLeftY = 0.0f;
+	//viewport.Width = i_width;
+	//viewport.Height = i_height;
+	//viewport.MinDepth = D3D11_MIN_DEPTH;
+	//viewport.MaxDepth = D3D11_MAX_DEPTH;
 
     //ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &viewport);
 
@@ -1281,6 +1271,29 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             .right = picture->format.i_x_offset + texDesc.Width,
             .back = 1,
         };
+
+        if (sys->stereo_enabled)
+        {
+			//Left eye
+			box.right = picture->format.i_x_offset + (texDesc.Width) / 2;
+			ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
+				sys->stagingSys.resource[KNOWN_DXGI_INDEX],
+				0, 0, 0, 0,
+				p_sys->resource[KNOWN_DXGI_INDEX],
+				p_sys->slice_index, &box);
+
+			//Right eye
+			box.right = picture->format.i_x_offset + (texDesc.Width);
+			box.left = picture->format.i_x_offset + (texDesc.Width)/2;
+			ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
+				sys->stagingSys.resourceRight[KNOWN_DXGI_INDEX],
+				0, 0, 0, 0,
+				p_sys->resource[KNOWN_DXGI_INDEX],
+				p_sys->slice_index, &box);
+
+			box.left = picture->format.i_x_offset;
+        }
+		else
         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
                                                   sys->stagingSys.resource[KNOWN_DXGI_INDEX],
                                                   0, 0, 0, 0,
@@ -1355,9 +1368,13 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
         if (sys->stereo_enabled)
         {
-            ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
-            DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
+            if (sys->showRightEye)
+            {
+                ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
+                DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
+            }
         }
+        //DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
     }
     else
         DisplayD3DPicture(sys, &sys->picQuad, picture->p_sys->resourceView);
@@ -1600,6 +1617,17 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     bool disable3D = FALSE;
 	//ID2D1Factory2 *d2dFacttory;
 
+	D3D_FEATURE_LEVEL featureLevels[] =
+	{
+		D3D_FEATURE_LEVEL_11_1,
+		D3D_FEATURE_LEVEL_11_0,
+		D3D_FEATURE_LEVEL_10_1,
+		D3D_FEATURE_LEVEL_10_0,
+		D3D_FEATURE_LEVEL_9_3,
+		D3D_FEATURE_LEVEL_9_2,
+		D3D_FEATURE_LEVEL_9_1
+	};
+	D3D_FEATURE_LEVEL i_feature_level;
     *fmt = vd->source;
 
 #if !VLC_WINSTORE_APP
@@ -1645,27 +1673,15 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
         D3D_DRIVER_TYPE_REFERENCE,
 #endif
     };
-	D3D_FEATURE_LEVEL i_feature_level;
+
 
     for (UINT driver = 0; driver < ARRAYSIZE(driverAttempts); driver++) {
-
-        //hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
-        //            NULL, 0, D3D11_SDK_VERSION,
-        //            &sys->d3ddevice, &i_feature_level, &sys->d3dcontext);
-
         {
-            D3D_FEATURE_LEVEL featureLevels[] =
-            {
-                D3D_FEATURE_LEVEL_11_1,
-                D3D_FEATURE_LEVEL_11_0,
-                D3D_FEATURE_LEVEL_10_1,
-                D3D_FEATURE_LEVEL_10_0,
-                D3D_FEATURE_LEVEL_9_3,
-                D3D_FEATURE_LEVEL_9_2,
-                D3D_FEATURE_LEVEL_9_1
-            };
+			//hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
+			//            NULL, 0, D3D11_SDK_VERSION,
+			//            &sys->d3ddevice, &i_feature_level, &sys->d3dcontext);
 
-            hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, creationFlags,
+            hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
                     featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION,
                     &sys->d3ddevice, &i_feature_level, &sys->d3dcontext);
         }
@@ -1676,8 +1692,6 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
                     driverAttempts[driver], i_feature_level);
 #endif
             //Update to DirectX11.1 interface
-            //sys->d3ddevice->lpVtbl->AddRef(sys->d3ddevice);
-            //d3dUpdatedDevice = sys->d3ddevice;
             ID3D11Device_QueryInterface(sys->d3ddevice, &IID_ID3D11Device, (void **)&sys->d3d11device);
 			//Update other interfaces???
             break;
@@ -1695,8 +1709,8 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 	}
 
 
-	ID3D11Device             *tempd3d11device;
-	hr = ID3D11Device_QueryInterface(sys->d3d11device, &IID_ID3D11Device, (void **)&tempd3d11device);
+	//ID3D11Device             *tempd3d11device;
+	//hr = ID3D11Device_QueryInterface(sys->d3d11device, &IID_ID3D11Device, (void **)&tempd3d11device);
 	//hr = ID2D1Factory1_CreateDevice(d2dFacttory, tempd3d11device, (void **)&sys->d2ddevice1);
 	//m_d2dFactory->CreateDevice(dxgiDevice.Get(), &m_d2dDevice);
 	//STDMETHOD(CreateDevice)(
@@ -1731,14 +1745,13 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     sys->stereo_enabled = (disable3D) ? FALSE : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
     if (sys->stereo_enabled)
     {
+        sys->showRightEye = FALSE;
         scd.Stereo = TRUE;
         scd.Scaling = DXGI_SCALING_NONE;
         //Won't be needed
         //scd.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
         //scd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
         //scd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-
-        scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL; // All Windows Store apps must use this SwapEffect.
         scd.Flags = 0;
     }
 
@@ -1838,7 +1851,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 static void Direct3D11Close(vout_display_t *vd)
 {
     vout_display_sys_t *sys = vd->sys;
-	//Todo : Add new entries for stereo
+	//Todo : Add new entries for stereo???
 
     Direct3D11DestroyResources(vd);
     if (sys->d3dcontext)
