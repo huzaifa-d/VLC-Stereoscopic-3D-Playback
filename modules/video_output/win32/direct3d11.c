@@ -163,6 +163,7 @@ struct vout_display_sys_t
     ID3D11PixelShader        *picQuadPixelShader;
 
     picture_sys_t            stagingSys;
+    picture_sys_t            stagingSysRight;
 
     ID3D11RenderTargetView   *d3drenderTargetView;
     ID3D11RenderTargetView   *d3drenderTargetViewRightEye;
@@ -174,8 +175,7 @@ struct vout_display_sys_t
     /* copy from the decoder pool into picSquad before display
      * Uses a Texture2D with slices rather than a Texture2DArray for the decoder */
     bool                     legacy_shader;
-	bool					 stereo_enabled;
-    bool                     showRightEye;
+    bool					 stereo_enabled;
 
     // SPU
     vlc_fourcc_t             pSubpictureChromas[2];
@@ -728,6 +728,7 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
 {
     vout_display_sys_t *sys = vd->sys;
     ID3D11Texture2D  *textures[pool_size * D3D11_MAX_SHADER_VIEW];
+    ID3D11Texture2D  *texturesRight[pool_size * D3D11_MAX_SHADER_VIEW];
     picture_t **pictures = NULL;
     picture_t *picture;
     unsigned  plane;
@@ -827,6 +828,22 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
 
         if (AllocateShaderView(vd, sys->picQuadConfig, 0, &sys->stagingSys))
             goto error;
+
+        if (sys->stereo_enabled)
+        {
+        video_format_t staging_fmt_right;
+        video_format_Copy(&staging_fmt_right, &surface_fmt);
+
+        if (AllocateTextures(vd, sys->picQuadConfig, &staging_fmt_right, 1, texturesRight, true,
+                             false))
+            goto error;
+
+        for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
+            sys->stagingSysRight.texture[plane] = texturesRight[plane];
+
+        if (AllocateShaderView(vd, sys->picQuadConfig, 0, &sys->stagingSysRight))
+            goto error;
+        }
     } else
 #endif
     {
@@ -888,7 +905,6 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     HRESULT hr;
     ID3D11Texture2D* pDepthStencil;
     ID3D11Texture2D* pBackBuffer;
-	//ID3D11Texture2D* pBackBuffer2;
     RECT rect;
 #if VLC_WINSTORE_APP
     if (!GetRect(&sys->sys, &rect))
@@ -1274,22 +1290,22 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
 
         if (sys->stereo_enabled)
         {
-			//Left eye
-			box.right = picture->format.i_x_offset + (texDesc.Width) / 2;
-			ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-				sys->stagingSys.resource[KNOWN_DXGI_INDEX],
-				0, 0, 0, 0,
-				p_sys->resource[KNOWN_DXGI_INDEX],
-				p_sys->slice_index, &box);
+            //Left split picture for left eye
+            box.right = picture->format.i_x_offset + (texDesc.Width) / 2;
+            ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
+            	sys->stagingSys.resource[KNOWN_DXGI_INDEX],
+            	0, 0, 0, 0,
+            	p_sys->resource[KNOWN_DXGI_INDEX],
+            	p_sys->slice_index, &box);
 
-			//Right eye
-			box.right = picture->format.i_x_offset + (texDesc.Width);
-			box.left = picture->format.i_x_offset + (texDesc.Width)/2;
-			ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-				sys->stagingSys.resourceRight[KNOWN_DXGI_INDEX],
-				0, 0, 0, 0,
-				p_sys->resource[KNOWN_DXGI_INDEX],
-				p_sys->slice_index, &box);
+            //Right split picture for right eye
+            box.right = picture->format.i_x_offset + (texDesc.Width);
+            box.left = picture->format.i_x_offset + (texDesc.Width)/2;
+            ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
+                sys->stagingSysRight.resource[KNOWN_DXGI_INDEX],
+                0, 0, 0, 0,
+                p_sys->resource[KNOWN_DXGI_INDEX],
+                p_sys->slice_index, &box);
 
 			box.left = picture->format.i_x_offset;
         }
@@ -1368,11 +1384,8 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
         if (sys->stereo_enabled)
         {
-            if (sys->showRightEye)
-            {
                 ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
-                DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
-            }
+                DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSysRight.resourceView);
         }
         //DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
     }
@@ -1615,19 +1628,16 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     vout_display_sys_t *sys = vd->sys;
     IDXGIFactory2 *dxgifactory;
     bool disable3D = FALSE;
-	//ID2D1Factory2 *d2dFacttory;
+    //ID2D1Factory2 *d2dFacttory;
 
-	D3D_FEATURE_LEVEL featureLevels[] =
-	{
-		D3D_FEATURE_LEVEL_11_1,
-		D3D_FEATURE_LEVEL_11_0,
-		D3D_FEATURE_LEVEL_10_1,
-		D3D_FEATURE_LEVEL_10_0,
-		D3D_FEATURE_LEVEL_9_3,
-		D3D_FEATURE_LEVEL_9_2,
-		D3D_FEATURE_LEVEL_9_1
-	};
-	D3D_FEATURE_LEVEL i_feature_level;
+    D3D_FEATURE_LEVEL featureLevels[] =
+    {
+        D3D_FEATURE_LEVEL_11_1,
+        D3D_FEATURE_LEVEL_11_0,
+        D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0
+    };
+    D3D_FEATURE_LEVEL i_feature_level;
     *fmt = vd->source;
 
 #if !VLC_WINSTORE_APP
@@ -1693,7 +1703,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 #endif
             //Update to DirectX11.1 interface
             ID3D11Device_QueryInterface(sys->d3ddevice, &IID_ID3D11Device, (void **)&sys->d3d11device);
-			//Update other interfaces???
+            //Update other interfaces???
             break;
         }
     }
@@ -1703,10 +1713,10 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
        return VLC_EGENERIC;
     }
 
-	if (i_feature_level < D3D_FEATURE_LEVEL_10_0) {
-		msg_Dbg(vd, "Could not create the 3D11 device with required feture level for Stereoscopic 3D. 3D won't work.");
+    if (i_feature_level < D3D_FEATURE_LEVEL_10_0) {
+        msg_Dbg(vd, "Could not create the 3D11 device with required feture level for Stereoscopic 3D. 3D won't work.");
         disable3D = TRUE;
-	}
+    }
 
 
 	//ID3D11Device             *tempd3d11device;
@@ -1745,7 +1755,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     sys->stereo_enabled = (disable3D) ? FALSE : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
     if (sys->stereo_enabled)
     {
-        sys->showRightEye = FALSE;
+        //sys->showRightEye = FALSE;
         scd.Stereo = TRUE;
         scd.Scaling = DXGI_SCALING_NONE;
         //Won't be needed
@@ -2327,7 +2337,7 @@ static int Direct3D11CreateResources(vout_display_t *vd, video_format_t *fmt)
         ID3D11DepthStencilState_Release(pDepthStencilState);
     }
 
-    sys->legacy_shader = !CanUseTextureArray(vd);
+    sys->legacy_shader = sys->stereo_enabled ? TRUE : !CanUseTextureArray(vd);
     vd->info.is_slow = !is_d3d11_opaque(fmt->i_chroma);
 
     hr = CompilePixelShader(vd, sys->picQuadConfig, fmt->transfer, fmt->b_color_range_full, &sys->picQuadPixelShader);
