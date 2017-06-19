@@ -73,6 +73,25 @@ static void Close(vlc_object_t *);
 #define HW_BLENDING_LONGTEXT N_(\
     "Try to use hardware acceleration for subtitle/OSD blending.")
 
+#define S3D_FORMAT_TEXT      N_("Stereo 3D file format")
+#define S3D_FORMAT_TEXT_LONGTEXT  N_("Set the 3D file format manually"\
+                                "Disabled, LeftOnly, RightOnly, SBS")
+
+typedef enum DX11_SBS_FORMATS {
+    S3D_Disabled       = 0,
+    S3D_LeftOnly       = 1,
+    S3D_RightOnly      = 2,
+    S3D_SBS            = 3,
+} DX11_SBS_FORMATS;
+
+static const int sbs_formats[] = {
+    S3D_Disabled, S3D_LeftOnly, S3D_RightOnly, S3D_SBS,
+
+};
+static const char *const sbs_formats_text[] = {
+     N_("Disabled (Original)"), N_("Left Only"), N_("Right Only"), N_("SBS 3D"),
+};
+
 vlc_module_begin ()
     set_shortname("Direct3D11")
     set_description(N_("Direct3D11 video output"))
@@ -81,6 +100,8 @@ vlc_module_begin ()
     set_subcategory(SUBCAT_VIDEO_VOUT)
 
     add_bool("direct3d11-hw-blending", true, HW_BLENDING_TEXT, HW_BLENDING_LONGTEXT, true)
+    add_integer ("s3d-format", S3D_Disabled, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
+        change_integer_list (sbs_formats, sbs_formats_text)
 
 #if VLC_WINSTORE_APP
     add_integer("winrt-d3dcontext",    0x0, NULL, NULL, true); /* ID3D11DeviceContext* */
@@ -1752,6 +1773,9 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
        return VLC_EGENERIC;
     }
 
+    int s3d_format = var_InheritInteger (vd, "s3d-format");
+    //Disable 3D if any format other than SBS is selected or if 3d is not supported by the system
+    disable3D = (s3d_format != S3D_SBS) ? TRUE : disable3D;
     sys->stereo_enabled = (disable3D) ? FALSE : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
     if (sys->stereo_enabled)
     {
@@ -1894,6 +1918,9 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
     vout_display_sys_t *sys = vd->sys;
 
     sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped);
+    //Correct the width for the split picture in stereo 3D mode
+    if (sys->stereo_enabled)
+        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
     sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
     sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
     sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
