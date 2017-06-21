@@ -67,6 +67,7 @@ static void Close(vlc_object_t *);
 //From the updated header file
 #define D3D11_MIN_DEPTH	( 0.0f )
 #define D3D11_MAX_DEPTH	( 1.0f )
+bool DynTest = 1;
 
 #define D3D11_HELP N_("Recommended video output for Windows 8 and later versions")
 #define HW_BLENDING_TEXT N_("Use hardware blending support")
@@ -77,19 +78,22 @@ static void Close(vlc_object_t *);
 #define S3D_FORMAT_TEXT_LONGTEXT  N_("Set the 3D file format manually"\
                                 "Disabled, LeftOnly, RightOnly, SBS")
 
-typedef enum DX11_SBS_FORMATS {
-    S3D_Disabled       = 0,
-    S3D_LeftOnly       = 1,
-    S3D_RightOnly      = 2,
-    S3D_SBS            = 3,
-} DX11_SBS_FORMATS;
+typedef enum STEREOSCOPIC_3D_FORMATS {
+    S3D_Disabled,
+    S3D_Auto,
+    S3D_LeftOnly,
+    S3D_RightOnly,
+    S3D_LeftRight,
+    S3D_TopBottom
+} STEREOSCOPIC_3D_FORMATS;
 
 static const int sbs_formats[] = {
-    S3D_Disabled, S3D_LeftOnly, S3D_RightOnly, S3D_SBS,
+    S3D_Disabled, S3D_Auto, S3D_LeftOnly, S3D_RightOnly, S3D_LeftRight, S3D_TopBottom,
 
 };
 static const char *const sbs_formats_text[] = {
-     N_("Disabled (Original)"), N_("Left Only"), N_("Right Only"), N_("SBS 3D"),
+     N_("Disabled (Original)"),  N_("Auto-detect"), N_("Left Only"), N_("Right Only"), N_("Side-by-Side Left-Right 3D"),
+     N_("Side-by-Side Top-Bottom 3D"),
 };
 
 vlc_module_begin ()
@@ -185,7 +189,6 @@ struct vout_display_sys_t
     ID3D11PixelShader        *picQuadPixelShader;
 
     picture_sys_t            stagingSys;
-    picture_sys_t            stagingSysRight;
 
     ID3D11RenderTargetView   *d3drenderTargetView;
     ID3D11RenderTargetView   *d3drenderTargetViewRightEye;
@@ -860,11 +863,11 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
                              false))
             goto error;
 
-        for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
-            sys->stagingSysRight.texture[plane] = texturesRight[plane];
+        //for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
+         //   sys->stagingSysRight.texture[plane] = texturesRight[plane];
 
-        if (AllocateShaderView(vd, sys->picQuadConfig, 0, &sys->stagingSysRight))
-            goto error;
+        //if (AllocateShaderView(vd, sys->picQuadConfig, 0, &sys->stagingSysRight))
+         //   goto error;
 
             sys->picQuadRightEye.i_x_offset = 0;
             sys->picQuadRightEye.i_y_offset = 0;
@@ -1418,8 +1421,11 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
         if (sys->stereo_enabled)
         {
-                ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
-                DisplayD3DPicture(sys, &sys->picQuadRightEye, sys->stagingSys.resourceView);
+                //if (DynTest)
+                {
+                    ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
+                    DisplayD3DPicture(sys, &sys->picQuadRightEye, sys->stagingSys.resourceView);
+                }
         }
         //DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
     }
@@ -1661,7 +1667,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 {
     vout_display_sys_t *sys = vd->sys;
     IDXGIFactory2 *dxgifactory;
-    bool disable3D = FALSE;
+    bool disable3D = false;
     //ID2D1Factory2 *d2dFacttory;
 
     D3D_FEATURE_LEVEL featureLevels[] =
@@ -1749,7 +1755,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 
     if (i_feature_level < D3D_FEATURE_LEVEL_10_0) {
         msg_Dbg(vd, "Could not create the 3D11 device with required feture level for Stereoscopic 3D. 3D won't work.");
-        disable3D = TRUE;
+        disable3D = true;
     }
 
 
@@ -1787,9 +1793,10 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     }
 
     int s3d_format = var_InheritInteger (vd, "s3d-format");
+    msg_Dbg(vd, "3D format command line : %d", s3d_format);
     //Disable 3D if any format other than SBS is selected or if 3d is not supported by the system
-    disable3D = (s3d_format != S3D_SBS) ? TRUE : disable3D;
-    sys->stereo_enabled = (disable3D) ? FALSE : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
+    disable3D = (s3d_format == S3D_Disabled) ? true : disable3D;
+    sys->stereo_enabled = (disable3D) ? false : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
     if (sys->stereo_enabled)
     {
         //sys->showRightEye = FALSE;
@@ -1929,28 +1936,47 @@ static void Direct3D11Close(vout_display_t *vd)
 static void UpdatePicQuadPosition(vout_display_t *vd)
 {
     vout_display_sys_t *sys = vd->sys;
+    int s3d_format = var_InheritInteger (vd, "s3d-format");
 
-    sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped);
-    //Correct the width for the split picture in stereo 3D mode
-    if (sys->stereo_enabled)
-        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
-    sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
-    sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
-    sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
-
-    sys->picQuad.cropViewport.MinDepth = 0.0f;
-    sys->picQuad.cropViewport.MaxDepth = 1.0f;
-
-    if (sys->stereo_enabled)
+    if (!sys->stereo_enabled)
     {
+        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
+    }
+    //For stereoscopic side by side left-right format
+    else if ((s3d_format == S3D_LeftRight) && (sys->stereo_enabled))
+    {
+        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
+
         sys->picQuadRightEye.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
         sys->picQuadRightEye.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
-        sys->picQuadRightEye.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
         sys->picQuadRightEye.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left - RECTWidth(sys->sys.rect_dest_clipped);
         sys->picQuadRightEye.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
         sys->picQuadRightEye.cropViewport.MinDepth = 0.0f;
         sys->picQuadRightEye.cropViewport.MaxDepth = 1.0f;
     }
+    //For stereoscopic side by side top-bottom format
+    else if ((s3d_format == S3D_TopBottom) && (sys->stereo_enabled))
+    {
+        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
+
+        sys->picQuadRightEye.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped);
+        sys->picQuadRightEye.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuadRightEye.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuadRightEye.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top - RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuadRightEye.cropViewport.MinDepth = 0.0f;
+        sys->picQuadRightEye.cropViewport.MaxDepth = 1.0f;
+    }
+    sys->picQuad.cropViewport.MinDepth = 0.0f;
+    sys->picQuad.cropViewport.MaxDepth = 1.0f;
 
     SetQuadVSProjection(vd, &sys->picQuad, &vd->cfg->viewpoint);
     //SetQuadVSProjection(vd, &sys->picQuadRightEye, &vd->cfg->viewpoint);
