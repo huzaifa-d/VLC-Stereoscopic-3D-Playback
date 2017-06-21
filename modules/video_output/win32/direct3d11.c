@@ -180,6 +180,7 @@ struct vout_display_sys_t
 	//IDXGISurface			 *dxgiSurface;
 	//ID2D1Bitmap1			 *d2dTargetBitmap, *d2dTargetRightBitmap;
     d3d_quad_t               picQuad;
+    d3d_quad_t               picQuadRightEye;
     const d3d_format_t       *picQuadConfig;
     ID3D11PixelShader        *picQuadPixelShader;
 
@@ -864,6 +865,11 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
 
         if (AllocateShaderView(vd, sys->picQuadConfig, 0, &sys->stagingSysRight))
             goto error;
+
+            sys->picQuadRightEye.i_x_offset = 0;
+            sys->picQuadRightEye.i_y_offset = 0;
+            sys->picQuadRightEye.i_width    = staging_fmt.i_width;
+            sys->picQuadRightEye.i_height   = staging_fmt.i_height;
         }
     } else
 #endif
@@ -882,6 +888,12 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
     if (SetupQuad( vd, &surface_fmt, &sys->picQuad, sys->picQuadConfig, sys->picQuadPixelShader,
                    surface_fmt.projection_mode) != VLC_SUCCESS) {
         msg_Err(vd, "Could not Create the main quad picture.");
+        return NULL;
+    }
+
+    if (SetupQuad( vd, &surface_fmt, &sys->picQuadRightEye, sys->picQuadConfig, sys->picQuadPixelShader,
+                   surface_fmt.projection_mode) != VLC_SUCCESS) {
+       msg_Err(vd, "Could not Create the main quad picture.");
         return NULL;
     }
 
@@ -1309,28 +1321,28 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             .back = 1,
         };
 
-        if (sys->stereo_enabled)
-        {
-            //Left split picture for left eye
-            box.right = picture->format.i_x_offset + (texDesc.Width) / 2;
-            ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-            	sys->stagingSys.resource[KNOWN_DXGI_INDEX],
-            	0, 0, 0, 0,
-            	p_sys->resource[KNOWN_DXGI_INDEX],
-            	p_sys->slice_index, &box);
+        //if (sys->stereo_enabled)
+        //{
+   //         //Left split picture for left eye
+   //         box.right = picture->format.i_x_offset + (texDesc.Width) / 2;
+   //         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
+   //         	sys->stagingSys.resource[KNOWN_DXGI_INDEX],
+   //         	0, 0, 0, 0,
+   //         	p_sys->resource[KNOWN_DXGI_INDEX],
+   //         	p_sys->slice_index, &box);
 
-            //Right split picture for right eye
-            box.right = picture->format.i_x_offset + (texDesc.Width);
-            box.left = picture->format.i_x_offset + (texDesc.Width)/2;
-            ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-                sys->stagingSysRight.resource[KNOWN_DXGI_INDEX],
-                0, 0, 0, 0,
-                p_sys->resource[KNOWN_DXGI_INDEX],
-                p_sys->slice_index, &box);
+   //         //Right split picture for right eye
+   //         box.right = picture->format.i_x_offset + (texDesc.Width);
+   //         box.left = picture->format.i_x_offset + (texDesc.Width)/2;
+   //         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
+   //             sys->stagingSysRight.resource[KNOWN_DXGI_INDEX],
+   //             0, 0, 0, 0,
+   //             p_sys->resource[KNOWN_DXGI_INDEX],
+   //             p_sys->slice_index, &box);
 
-			box.left = picture->format.i_x_offset;
-        }
-		else
+			//box.left = picture->format.i_x_offset;
+        //}
+        //else
         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
                                                   sys->stagingSys.resource[KNOWN_DXGI_INDEX],
                                                   0, 0, 0, 0,
@@ -1402,11 +1414,12 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
     /* Render the quad */
     if (!is_d3d11_opaque(picture->format.i_chroma) || sys->legacy_shader)
     {
+        //DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
         DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
         if (sys->stereo_enabled)
         {
                 ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
-                DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSysRight.resourceView);
+                DisplayD3DPicture(sys, &sys->picQuadRightEye, sys->stagingSys.resourceView);
         }
         //DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView);
     }
@@ -1928,7 +1941,19 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
     sys->picQuad.cropViewport.MinDepth = 0.0f;
     sys->picQuad.cropViewport.MaxDepth = 1.0f;
 
+    if (sys->stereo_enabled)
+    {
+        sys->picQuadRightEye.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuadRightEye.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuadRightEye.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuadRightEye.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left - RECTWidth(sys->sys.rect_dest_clipped);
+        sys->picQuadRightEye.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
+        sys->picQuadRightEye.cropViewport.MinDepth = 0.0f;
+        sys->picQuadRightEye.cropViewport.MaxDepth = 1.0f;
+    }
+
     SetQuadVSProjection(vd, &sys->picQuad, &vd->cfg->viewpoint);
+    //SetQuadVSProjection(vd, &sys->picQuadRightEye, &vd->cfg->viewpoint);
 
 #ifndef NDEBUG
     msg_Dbg(vd, "picQuad position (%.02f,%.02f) %.02fx%.02f", sys->picQuad.cropViewport.TopLeftX, sys->picQuad.cropViewport.TopLeftY, sys->picQuad.cropViewport.Width, sys->picQuad.cropViewport.Height );
