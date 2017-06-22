@@ -185,6 +185,8 @@ void vout_IntfInit( vout_thread_t *p_vout )
 
     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
 
+    var_Create( p_vout, "s3d-format", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
+
     /* Crop offset vars */
     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
     var_Create( p_vout, "crop-top", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );

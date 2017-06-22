@@ -201,6 +201,7 @@ struct vout_display_sys_t
      * Uses a Texture2D with slices rather than a Texture2DArray for the decoder */
     bool                     legacy_shader;
     bool					 stereo_enabled;
+    int                      source3DFormat;
 
     // SPU
     vlc_fourcc_t             pSubpictureChromas[2];
@@ -1793,10 +1794,21 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     }
 
     int s3d_format = var_InheritInteger (vd, "s3d-format");
-    msg_Dbg(vd, "3D format command line : %d", s3d_format);
+    //msg_Dbg(vd, "3D format command line : %d", s3d_format);
     //Disable 3D if any format other than SBS is selected or if 3d is not supported by the system
     disable3D = (s3d_format == S3D_Disabled) ? true : disable3D;
     sys->stereo_enabled = (disable3D) ? false : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
+    if ((fmt->multiview_mode == MULTIVIEW_STEREO_SBS) && (s3d_format == S3D_Auto))
+    {
+        sys->source3DFormat = S3D_LeftRight;
+    }
+    else if ((fmt->multiview_mode == MULTIVIEW_STEREO_TB) && (s3d_format == S3D_Auto))
+    {
+        sys->source3DFormat = S3D_TopBottom;
+    }
+    else
+        sys->stereo_enabled = false;
+
     if (sys->stereo_enabled)
     {
         //sys->showRightEye = FALSE;
@@ -1946,7 +1958,7 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
         sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
     }
     //For stereoscopic side by side left-right format
-    else if ((s3d_format == S3D_LeftRight) && (sys->stereo_enabled))
+    else if (((s3d_format == S3D_LeftRight) || ( sys->source3DFormat == S3D_LeftRight)) && (sys->stereo_enabled))
     {
         sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
         sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
@@ -1961,7 +1973,7 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
         sys->picQuadRightEye.cropViewport.MaxDepth = 1.0f;
     }
     //For stereoscopic side by side top-bottom format
-    else if ((s3d_format == S3D_TopBottom) && (sys->stereo_enabled))
+    else if (((s3d_format == S3D_TopBottom) || ( sys->source3DFormat == S3D_TopBottom)) && (sys->stereo_enabled))
     {
         sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped);
         sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
@@ -1974,6 +1986,20 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
         sys->picQuadRightEye.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top - RECTHeight(sys->sys.rect_dest_clipped);
         sys->picQuadRightEye.cropViewport.MinDepth = 0.0f;
         sys->picQuadRightEye.cropViewport.MaxDepth = 1.0f;
+    }
+    else if (s3d_format == S3D_LeftOnly)
+    {
+        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
+    }
+    else if (s3d_format == S3D_RightOnly)
+    {
+        sys->picQuad.cropViewport.Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuad.cropViewport.Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.TopLeftX = sys->sys.rect_dest_clipped.left - RECTWidth(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport.TopLeftY = sys->sys.rect_dest_clipped.top;
     }
     sys->picQuad.cropViewport.MinDepth = 0.0f;
     sys->picQuad.cropViewport.MaxDepth = 1.0f;

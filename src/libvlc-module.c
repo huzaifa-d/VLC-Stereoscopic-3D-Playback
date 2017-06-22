@@ -46,6 +46,29 @@
 static const char *const ppsz_snap_formats[] =
 { "png", "jpg", "tiff" };
 
+//Temporarily here to test if it works
+#define S3D_FORMAT_TEXT      N_("Stereo 3D file format")
+#define S3D_FORMAT_TEXT_LONGTEXT  N_("Set the 3D file format manually"\
+                                "Disabled, LeftOnly, RightOnly, SBS")
+
+typedef enum STEREOSCOPIC_3D_FORMATS {
+    S3D_Disabled,
+    S3D_Auto,
+    S3D_LeftOnly,
+    S3D_RightOnly,
+    S3D_LeftRight,
+    S3D_TopBottom
+} STEREOSCOPIC_3D_FORMATS;
+
+static const int sbs_formats[] = {
+    S3D_Disabled, S3D_Auto, S3D_LeftOnly, S3D_RightOnly, S3D_LeftRight, S3D_TopBottom,
+
+};
+static const char *const sbs_formats_text[] = {
+     N_("Disabled (Original)"),  N_("Auto-detect"), N_("Left Only"), N_("Right Only"), N_("Side-by-Side Left-Right 3D"),
+     N_("Side-by-Side Top-Bottom 3D"),
+};
+
 /*****************************************************************************
  * Configuration options for the core module. Each module will also separatly
  * define its own configuration options.
@@ -1523,6 +1546,7 @@ vlc_module_begin ()
         change_safe ()
     add_bool( "grayscale", 0, GRAYSCALE_TEXT,
               GRAYSCALE_LONGTEXT, true )
+//Adding add_integer here seems to make no difference. Seems the older file is loaded.
     add_bool( "fullscreen", false, FULLSCREEN_TEXT, FULLSCREEN_LONGTEXT, false )
         change_short('f')
         change_safe ()

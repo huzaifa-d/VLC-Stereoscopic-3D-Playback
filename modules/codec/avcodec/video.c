@@ -39,6 +39,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/mem.h>
 #include <libavutil/pixdesc.h>
+#include <libavutil/stereo3d.h>
 #if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 16, 101 ) )
 #include <libavutil/mastering_display_metadata.h>
 #endif
@@ -754,6 +755,9 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
     AVCodecContext *p_context = p_sys->p_context;
+    //For temproary testing
+	static int currentMultiviewFormat = -1;
+
     /* Boolean if we assume that we should get valid pic as result */
     bool b_need_output_picture = true;
 
@@ -1139,6 +1143,29 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
             }
         }
 #endif
+//#if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 60, 100 ) )
+        const AVFrameSideData *p_stereo3d_data =
+                av_frame_get_side_data( frame,
+                                        AV_FRAME_DATA_STEREO3D );
+        if( p_stereo3d_data )
+        {
+
+            int metaStereo3dFormat = *p_stereo3d_data->data;
+            if (currentMultiviewFormat != metaStereo3dFormat)
+            //if (currentMultiviewFormat)
+            {
+            //const char *name = av_stereo3d_type_name(*p_stereo3d_data->data);
+            //msg_Dbg( p_dec, "3D Video Format %s detected in frame", name);
+                if (metaStereo3dFormat == AV_STEREO3D_SIDEBYSIDE)
+                    p_dec->fmt_out.video.multiview_mode = MULTIVIEW_STEREO_SBS;
+                else if (metaStereo3dFormat == AV_STEREO3D_TOPBOTTOM)
+                    p_dec->fmt_out.video.multiview_mode = MULTIVIEW_STEREO_TB;
+                format_changed = true;
+                currentMultiviewFormat = metaStereo3dFormat;
+            }
+
+        }
+//#endif
 
         const AVFrameSideData *p_avcc = av_frame_get_side_data( frame, AV_FRAME_DATA_A53_CC );
         if( p_avcc )
