@@ -757,6 +757,7 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
     AVCodecContext *p_context = p_sys->p_context;
     //For temproary testing
 	static int currentMultiviewFormat = -1;
+    static decoder_owner_sys_t *oldDecoderOwner;
 
     /* Boolean if we assume that we should get valid pic as result */
     bool b_need_output_picture = true;
@@ -1143,6 +1144,13 @@ static picture_t *DecodeBlock( decoder_t *p_dec, block_t **pp_block, bool *error
             }
         }
 #endif
+        if (oldDecoderOwner != p_dec->p_owner)
+        {
+            oldDecoderOwner = p_dec->p_owner;
+            //msg_Dbg(p_dec, "DynDebug : Source File changed");
+            currentMultiviewFormat = -1;
+        }
+
 //#if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 60, 100 ) )
         const AVFrameSideData *p_stereo3d_data =
                 av_frame_get_side_data( frame,
