@@ -57,6 +57,8 @@ static int AutoScaleCallback( vlc_object_t *, char const *,
                               vlc_value_t, vlc_value_t, void * );
 static int ZoomCallback( vlc_object_t *, char const *,
                          vlc_value_t, vlc_value_t, void * );
+static int Stereo3DFormatCallback( vlc_object_t *, char const *,
+                         vlc_value_t, vlc_value_t, void * );
 static int AboveCallback( vlc_object_t *, char const *,
                           vlc_value_t, vlc_value_t, void * );
 static int WallPaperCallback( vlc_object_t *, char const *,
@@ -81,6 +83,19 @@ static int ViewpointCallback( vlc_object_t *, char const *,
  *****************************************************************************/
 static const struct
 {
+    int i_value;
+    char psz_label[27];
+} p_3Dformat_values[] = {
+    { 0, N_("Disabled (Original)") },
+    { 1, N_("Auto-detect") },
+    { 2, N_("Left Only") },
+    { 3, N_("Right Only") },
+    { 4, N_("Side-by-Side Left-Right 3D") },
+    { 5, N_("Side-by-Side Top-Bottom 3D") },
+};
+
+static const struct
+{
     double f_value;
     char psz_label[13];
 } p_zoom_values[] = {
@@ -89,6 +104,8 @@ static const struct
     { 1, N_("1:1 Original") },
     { 2, N_("2:1 Double") },
 };
+
+
 
 static const struct
 {
@@ -186,6 +203,18 @@ void vout_IntfInit( vout_thread_t *p_vout )
     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
 
     var_Create( p_vout, "s3d-format", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
+
+    text.psz_string = _("3d-format");
+    var_Change( p_vout, "s3d-format", VLC_VAR_SETTEXT, &text, NULL );
+
+    for( size_t i = 0; i < ARRAY_SIZE(p_3Dformat_values); i++ )
+    {
+        val.i_int = p_3Dformat_values[i].i_value;
+        text.psz_string = vlc_gettext( p_3Dformat_values[i].psz_label );
+        var_Change( p_vout, "s3d-format", VLC_VAR_ADDCHOICE, &val, &text );
+    }
+
+    var_AddCallback( p_vout, "s3d-format", Stereo3DFormatCallback, NULL );
 
     /* Crop offset vars */
     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
@@ -517,6 +546,16 @@ static int ZoomCallback( vlc_object_t *obj, char const *name,
 
     (void) name; (void) prev; (void) data;
     vout_ControlChangeZoom( p_vout, 1000 * cur.f_float, 1000 );
+    return VLC_SUCCESS;
+}
+
+static int Stereo3DFormatCallback( vlc_object_t *obj, char const *name,
+                         vlc_value_t prev, vlc_value_t cur, void *data )
+{
+    vout_thread_t *p_vout = (vout_thread_t *)obj;
+
+    (void) name; (void) prev; (void) data;
+    vout_ControlChangeMultiview( p_vout, cur.i_int );
     return VLC_SUCCESS;
 }
 

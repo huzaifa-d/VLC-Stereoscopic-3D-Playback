@@ -85,6 +85,7 @@ bool vout_AreDisplayPicturesInvalid(vout_display_t *);
 bool vout_ManageDisplay(vout_display_t *, bool allow_reset_pictures);
 
 void vout_SetDisplayFilled(vout_display_t *, bool is_filled);
+void vout_SetMultiview(vout_display_t *vd, int format);
 void vout_SetDisplayZoom(vout_display_t *, unsigned num, unsigned den);
 void vout_SetDisplayAspect(vout_display_t *, unsigned num, unsigned den);
 void vout_SetDisplayCrop(vout_display_t *, unsigned num, unsigned den,

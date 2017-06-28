@@ -49,7 +49,7 @@ static const char *const ppsz_snap_formats[] =
 //Temporarily here to test if it works
 #define S3D_FORMAT_TEXT      N_("Stereo 3D file format")
 #define S3D_FORMAT_TEXT_LONGTEXT  N_("Set the 3D file format manually"\
-                                "Disabled, LeftOnly, RightOnly, SBS")
+                                "Disabled, LeftOnly, RightOnly")
 
 typedef enum STEREOSCOPIC_3D_FORMATS {
     S3D_Disabled,
@@ -569,7 +569,7 @@ static const char *const ppsz_clock_descriptions[] =
 /* Should be less than 1500 - 8[ppp] - 40[ip6] - 8[udp] in any case. */
 #define MTU_DEFAULT 1400
 
-#define TTL_TEXT N_("Hop limit (TTL)")
+#define TTL_TEXT N_("Hop limit (TTL) DynDebug")
 #define TTL_LONGTEXT N_( \
     "This is the hop limit (also known as \"Time-To-Live\" or TTL) of " \
     "the multicast packets sent by the stream output (-1 = use operating " \
@@ -1337,7 +1337,7 @@ static const char *const mouse_wheel_texts[] = {
 
 #define ZOOM_QUARTER_KEY_TEXT N_("1:4 Quarter")
 #define ZOOM_HALF_KEY_TEXT N_("1:2 Half")
-#define ZOOM_ORIGINAL_KEY_TEXT N_("1:1 Original")
+#define ZOOM_ORIGINAL_KEY_TEXT N_("1:1 Originalz")
 #define ZOOM_DOUBLE_KEY_TEXT N_("2:1 Double")
 
 #define PLAY_BOOKMARK1_KEY_TEXT N_("Play playlist bookmark 1")
@@ -1434,8 +1434,8 @@ static const char *const mouse_wheel_texts[] = {
 
 #define CROP_LEFT_KEY_TEXT N_("Crop one pixel from the left of the video")
 #define CROP_LEFT_KEY_LONGTEXT N_("Crop one pixel from the left of the video")
-#define UNCROP_LEFT_KEY_TEXT N_("Uncrop one pixel from the left of the video")
-#define UNCROP_LEFT_KEY_LONGTEXT N_("Uncrop one pixel from the left of the video")
+#define UNCROP_LEFT_KEY_TEXT N_("Uncrop one pixel from the left of the video DynDebu")
+#define UNCROP_LEFT_KEY_LONGTEXT N_("Uncrop one pixel from the left of the video DynDebug")
 
 #define CROP_BOTTOM_KEY_TEXT N_("Crop one pixel from the bottom of the video")
 #define CROP_BOTTOM_KEY_LONGTEXT N_("Crop one pixel from the bottom of the video")
@@ -1577,6 +1577,11 @@ vlc_module_begin ()
 
     add_bool( "video-title-show", 1, VIDEO_TITLE_SHOW_TEXT,
               VIDEO_TITLE_SHOW_LONGTEXT, false )
+    //Stereo 3d Formats
+    //change_safe()
+    add_integer ("s3d-format", S3D_Disabled, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
+        change_integer_list (sbs_formats, sbs_formats_text)
+
         change_safe()
     add_integer( "video-title-timeout", 5000, VIDEO_TITLE_TIMEOUT_TEXT,
                  VIDEO_TITLE_TIMEOUT_LONGTEXT, false )

@@ -64,11 +64,6 @@ DEFINE_GUID(GUID_SWAPCHAIN_HEIGHT, 0x6ea976a0, 0x9d60, 0x4bb7, 0xa5, 0xa9, 0x7d,
 static int  Open(vlc_object_t *);
 static void Close(vlc_object_t *);
 
-//From the updated header file
-#define D3D11_MIN_DEPTH	( 0.0f )
-#define D3D11_MAX_DEPTH	( 1.0f )
-bool DynTest = 1;
-
 #define D3D11_HELP N_("Recommended video output for Windows 8 and later versions")
 #define HW_BLENDING_TEXT N_("Use hardware blending support")
 #define HW_BLENDING_LONGTEXT N_(\
@@ -78,23 +73,7 @@ bool DynTest = 1;
 #define S3D_FORMAT_TEXT_LONGTEXT  N_("Set the 3D file format manually"\
                                 "Disabled, LeftOnly, RightOnly, SBS")
 
-typedef enum STEREOSCOPIC_3D_FORMATS {
-    S3D_Disabled,
-    S3D_Auto,
-    S3D_LeftOnly,
-    S3D_RightOnly,
-    S3D_LeftRight,
-    S3D_TopBottom
-} STEREOSCOPIC_3D_FORMATS;
 
-static const int sbs_formats[] = {
-    S3D_Disabled, S3D_Auto, S3D_LeftOnly, S3D_RightOnly, S3D_LeftRight, S3D_TopBottom,
-
-};
-static const char *const sbs_formats_text[] = {
-     N_("Disabled (Original)"),  N_("Auto-detect"), N_("Left Only"), N_("Right Only"), N_("Side-by-Side Left-Right 3D"),
-     N_("Side-by-Side Top-Bottom 3D"),
-};
 
 vlc_module_begin ()
     set_shortname("Direct3D11")
@@ -104,8 +83,8 @@ vlc_module_begin ()
     set_subcategory(SUBCAT_VIDEO_VOUT)
 
     add_bool("direct3d11-hw-blending", true, HW_BLENDING_TEXT, HW_BLENDING_LONGTEXT, true)
-    add_integer ("s3d-format", S3D_Disabled, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
-        change_integer_list (sbs_formats, sbs_formats_text)
+    //add_integer ("s3d-format", S3D_Disabled, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
+    //    change_integer_list (sbs_formats, sbs_formats_text)
 
 #if VLC_WINSTORE_APP
     add_integer("winrt-d3dcontext",    0x0, NULL, NULL, true); /* ID3D11DeviceContext* */
@@ -180,12 +159,7 @@ struct vout_display_sys_t
     ID3D11Device             *d3ddevice;       /* D3D device */
     ID3D11Device             *d3d11device;     /* D3D 11 device */
     ID3D11DeviceContext      *d3dcontext;      /* D3D context */
-	//ID2D1Device1			 *d2ddevice1;
-	//ID2D1DeviceContext1      *d2dcontext1;
-	//IDXGISurface			 *dxgiSurface;
-	//ID2D1Bitmap1			 *d2dTargetBitmap, *d2dTargetRightBitmap;
     d3d_quad_t               picQuad;
-    //d3d_quad_t               picQuadRightEye;
     const d3d_format_t       *picQuadConfig;
     ID3D11PixelShader        *picQuadPixelShader;
 
@@ -864,17 +838,6 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
         if (AllocateTextures(vd, sys->picQuadConfig, &staging_fmt_right, 1, texturesRight, true,
                              false))
             goto error;
-
-        //for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
-         //   sys->stagingSysRight.texture[plane] = texturesRight[plane];
-
-        //if (AllocateShaderView(vd, sys->picQuadConfig, 0, &sys->stagingSysRight))
-         //   goto error;
-
-            //sys->picQuadRightEye.i_x_offset = 0;
-            //sys->picQuadRightEye.i_y_offset = 0;
-            //sys->picQuadRightEye.i_width    = staging_fmt.i_width;
-            //sys->picQuadRightEye.i_height   = staging_fmt.i_height;
         }
     } else
 #endif
@@ -959,11 +922,10 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     }
 
     /* TODO detect is the size is the same as the output and switch to fullscreen mode */
-    //hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 0, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
-
-    //hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 2, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
-    //Temporary hack to view only half for testing to be used here
-      hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 2, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
+    if (sys->stereo_enabled)
+        hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 2, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
+    else
+         hr = IDXGISwapChain_ResizeBuffers(sys->dxgiswapChain, 0, i_width, i_height, DXGI_FORMAT_UNKNOWN, 0);
     if (FAILED(hr)) {
        msg_Err(vd, "Failed to resize the backbuffer. (hr=0x%lX)", hr);
        return hr;
@@ -1014,14 +976,12 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
         return hr;
     }
 
-    //Don't change, except maybe width and height
     D3D11_TEXTURE2D_DESC deptTexDesc;
     memset(&deptTexDesc, 0,sizeof(deptTexDesc));
     deptTexDesc.ArraySize = 1;
     deptTexDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
     deptTexDesc.CPUAccessFlags = 0;
     deptTexDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    //Temp hack to view only half
     deptTexDesc.Width = i_width;
     deptTexDesc.Height = i_height;
     deptTexDesc.MipLevels = 1;
@@ -1029,7 +989,7 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     deptTexDesc.SampleDesc.Count = 1;
     deptTexDesc.SampleDesc.Quality = 0;
     deptTexDesc.Usage = D3D11_USAGE_DEFAULT;
-    //Use updated device???
+
     hr = ID3D11Device_CreateTexture2D(sys->d3ddevice, &deptTexDesc, NULL, &pDepthStencil);
     if (FAILED(hr)) {
        msg_Err(vd, "Could not create the depth stencil texture. (hr=0x%lX)", hr);
@@ -1040,9 +1000,6 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     memset(&depthViewDesc, 0, sizeof(depthViewDesc));
 
     depthViewDesc.Format = deptTexDesc.Format;
-	//Might have to use the values below
-	//depthViewDesc.Format = DXGI_FORMAT_UNKNOWN;
-	//depthViewDesc.Flags = 0;
     depthViewDesc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
     depthViewDesc.Texture2D.MipSlice = 0;
 
@@ -1053,50 +1010,6 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
        msg_Err(vd, "Could not create the depth stencil view. (hr=0x%lX)", hr);
        return hr;
     }
-
-	//D3D11_VIEWPORT viewport;
-	//viewport.TopLeftX = 0.0f;
-	//viewport.TopLeftY = 0.0f;
-	//viewport.Width = i_width;
-	//viewport.Height = i_height;
-	//viewport.MinDepth = D3D11_MIN_DEPTH;
-	//viewport.MaxDepth = D3D11_MAX_DEPTH;
-
-    //ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &viewport);
-
-    //D2D1_BITMAP_PROPERTIES1 bitmapProperties;
-	//bitmapProperties.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-	//bitmapProperties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-	//bitmapProperties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-	////Using default values
-	//bitmapProperties.colorContext = NULL;
-	//bitmapProperties.dpiX = 96.0f;
-	//bitmapProperties.dpiY = 96.0f;
-
-	//
-	//hr = IDXGISwapChain_GetBuffer(sys->dxgiswapChain, 0, &IID_ID3D11Texture2D, (LPVOID *)&pBackBuffer2);
-	//if (FAILED(hr)) {
-	//	msg_Err(vd, "Could not get another pointer to the backbuffer for the Swapchain. (hr=0x%lX)", hr);
-	//	return hr;
-	//}
-
-	//IDXGISurface *dxgiSurface;
-    //IDXGIResource1_CreateSubresourceSurface(pBackBuffer2, 0, &dxgiSurface);
-	//ID2D1DeviceContext_CreateBitmapFromDxgiSurface(0, dxgiSurface, bitmapProperties, )
-	
-	//hr = IDXGIResource1_CreateSubresourceSurface(pBackBuffer2, 0, &sys->dxgiSurface);
-	//hr = ID2D1DeviceContext1_CreateBitmapFromDxgiSurface(sys->d2dcontext1, &sys->dxgiSurface, &bitmapProperties, (void **)&sys->d2dTargetBitmap);
-
-	// Stereo swapchains have an arrayed resource, so create a second Target Bitmap
-	// for the right eye buffer.
-	//if (sys->stereo_enabled) 
-	{
-		//hr = IDXGIResource1_CreateSubresourceSurface(pBackBuffer2, 0, &sys->dxgiSurface);
-
-		//hr = ID2D1DeviceContext1_CreateBitmapFromDxgiSurface(sys->d2dcontext1, &sys->dxgiSurface, &bitmapProperties, (void **)&sys->d2dTargetRightBitmap);
-	}
-
-    //ID2D1DeviceContext_SetTarget(sys->d2dcontext1, sys->d2dTargetBitmap);
 
     return S_OK;
 }
@@ -1263,6 +1176,19 @@ static int Control(vout_display_t *vd, int query, va_list args)
             res = VLC_SUCCESS;
         }
     }
+    else if (query == VOUT_DISPLAY_CHANGE_MULTIVIEW)
+    {
+        const vout_display_cfg_t *cfg = va_arg(args, const vout_display_cfg_t*);
+        //Disable Stereoscopic 3D
+        if (cfg->multiview_format < S3D_LeftRight)
+        {
+            vd->sys->stereo_enabled = false;
+        }
+        UpdateBackBuffer(vd);
+        UpdatePicQuadPosition(vd);
+
+        res = VLC_SUCCESS;
+    }
 
     return res;
 }
@@ -1289,6 +1215,7 @@ static void Manage(vout_display_t *vd)
         UpdateBackBuffer(vd);
 
         UpdatePicQuadPosition(vd);
+
 #if defined(HAVE_ID3D11VIDEODECODER)
         if( sys->context_lock != INVALID_HANDLE_VALUE )
         {
@@ -1319,29 +1246,6 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             .right = picture->format.i_x_offset + texDesc.Width,
             .back = 1,
         };
-
-        //if (sys->stereo_enabled)
-        //{
-   //         //Left split picture for left eye
-   //         box.right = picture->format.i_x_offset + (texDesc.Width) / 2;
-   //         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-   //         	sys->stagingSys.resource[KNOWN_DXGI_INDEX],
-   //         	0, 0, 0, 0,
-   //         	p_sys->resource[KNOWN_DXGI_INDEX],
-   //         	p_sys->slice_index, &box);
-
-   //         //Right split picture for right eye
-   //         box.right = picture->format.i_x_offset + (texDesc.Width);
-   //         box.left = picture->format.i_x_offset + (texDesc.Width)/2;
-   //         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-   //             sys->stagingSysRight.resource[KNOWN_DXGI_INDEX],
-   //             0, 0, 0, 0,
-   //             p_sys->resource[KNOWN_DXGI_INDEX],
-   //             p_sys->slice_index, &box);
-
-			//box.left = picture->format.i_x_offset;
-        //}
-        //else
         ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
                                                   sys->stagingSys.resource[KNOWN_DXGI_INDEX],
                                                   0, 0, 0, 0,
@@ -1367,7 +1271,7 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
 
 static void DisplayD3DPicture(vout_display_sys_t *sys, d3d_quad_t *quad, ID3D11ShaderResourceView *resourceView[D3D11_MAX_SHADER_VIEW], bool showRightEye)
 {
-    UINT stride = sizeof(d3d_vertex_t); //sizeof(BasicVertex); ???
+    UINT stride = sizeof(d3d_vertex_t);
     UINT offset = 0;
 
     /* Render the quad */
@@ -1383,7 +1287,7 @@ static void DisplayD3DPicture(vout_display_sys_t *sys, d3d_quad_t *quad, ID3D11S
     ID3D11DeviceContext_PSSetShader(sys->d3dcontext, quad->d3dpixelShader, NULL, 0);
 
     ID3D11DeviceContext_PSSetConstantBuffers(sys->d3dcontext, 0, quad->PSConstantsCount, quad->pPixelShaderConstants);
-    ID3D11DeviceContext_PSSetShaderResources(sys->d3dcontext, 0, D3D11_MAX_SHADER_VIEW, resourceView); //1 instead of D3D11_MAX_SHADER_VIEW???
+    ID3D11DeviceContext_PSSetShaderResources(sys->d3dcontext, 0, D3D11_MAX_SHADER_VIEW, resourceView);
 
     if (showRightEye)
         ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &quad->cropRigthEyeViewport);
@@ -1409,7 +1313,6 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
     /* no ID3D11Device operations should come here */
 
     ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetView, sys->d3ddepthStencilView);
-    //ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
 
     ID3D11DeviceContext_ClearDepthStencilView(sys->d3dcontext, sys->d3ddepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
@@ -1419,7 +1322,6 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView, false);
         if (sys->stereo_enabled)
         {
-                //if (DynTest)
                 {
                     ID3D11DeviceContext_OMSetRenderTargets(sys->d3dcontext, 1, &sys->d3drenderTargetViewRightEye, sys->d3ddepthStencilView);
                     DisplayD3DPicture(sys, &sys->picQuad, sys->stagingSys.resourceView, true);
@@ -1666,7 +1568,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
     IDXGIFactory2 *dxgifactory;
     bool disable3D = false;
     static int multiview_mode_remember = 0;
-    //ID2D1Factory2 *d2dFacttory;
+    int s3d_format = var_InheritInteger (vd, "s3d-format");
 
     D3D_FEATURE_LEVEL featureLevels[] =
     {
@@ -1725,10 +1627,6 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 
     for (UINT driver = 0; driver < ARRAYSIZE(driverAttempts); driver++) {
         {
-			//hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
-			//            NULL, 0, D3D11_SDK_VERSION,
-			//            &sys->d3ddevice, &i_feature_level, &sys->d3dcontext);
-
             hr = D3D11CreateDevice(NULL, driverAttempts[driver], NULL, creationFlags,
                     featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION,
                     &sys->d3ddevice, &i_feature_level, &sys->d3dcontext);
@@ -1741,7 +1639,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 #endif
             //Update to DirectX11.1 interface
             ID3D11Device_QueryInterface(sys->d3ddevice, &IID_ID3D11Device, (void **)&sys->d3d11device);
-            //Update other interfaces???
+
             break;
         }
     }
@@ -1756,27 +1654,6 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
         disable3D = true;
     }
 
-
-	//ID3D11Device             *tempd3d11device;
-	//hr = ID3D11Device_QueryInterface(sys->d3d11device, &IID_ID3D11Device, (void **)&tempd3d11device);
-	//hr = ID2D1Factory1_CreateDevice(d2dFacttory, tempd3d11device, (void **)&sys->d2ddevice1);
-	//m_d2dFactory->CreateDevice(dxgiDevice.Get(), &m_d2dDevice);
-	//STDMETHOD(CreateDevice)(
-	//	ID2D1Factory2 *This,
-	//	_In_ IDXGIDevice *dxgiDevice,
-	//	_Outptr_ ID2D1Device1 **d2dDevice1
-	//	) PURE;
-
-	//hr = ID2D1Device_CreateDeviceContext(sys->d2ddevice1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, (void **)&sys->d2dcontext1);
-	//STDMETHOD(CreateDeviceContext)(
-	//	ID2D1Device1 *This,
-	//	D2D1_DEVICE_CONTEXT_OPTIONS options,
-	//	_Outptr_ ID2D1DeviceContext1 **deviceContext1
-	//	)
-
-
-
-
     IDXGIAdapter *dxgiadapter = D3D11DeviceAdapter(sys->d3d11device);
     if (FAILED(hr)) {
        msg_Err(vd, "Could not get the DXGI Adapter");
@@ -1790,8 +1667,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
        return VLC_EGENERIC;
     }
 
-    int s3d_format = var_InheritInteger (vd, "s3d-format");
-    //msg_Dbg(vd, "3D format command line : %d", s3d_format);
+	msg_Dbg(vd, "3D format command line : %d", s3d_format);
     //Disable 3D if any format other than SBS is selected or if 3d is not supported by the system
     disable3D = (s3d_format == S3D_Disabled) ? true : disable3D;
     sys->stereo_enabled = (disable3D) ? false : IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
@@ -1812,21 +1688,15 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
         sys->source3DFormat = S3D_TopBottom;
         multiview_mode_remember = MULTIVIEW_STEREO_TB;
     }
-    else if ((fmt->multiview_mode == MULTIVIEW_2D) && (s3d_format == S3D_Auto))
+    else if ((fmt->multiview_mode == MULTIVIEW_2D) && (s3d_format != S3D_Auto))
         sys->stereo_enabled = false;
 
     if (sys->stereo_enabled)
     {
-        //sys->showRightEye = FALSE;
         scd.Stereo = TRUE;
         scd.Scaling = DXGI_SCALING_NONE;
-        //Won't be needed
-        //scd.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
-        //scd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-        //scd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
         scd.Flags = 0;
     }
-
 
     hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3d11device,
                                               sys->sys.hvideownd, &scd, NULL, NULL, &sys->dxgiswapChain);
@@ -2012,7 +1882,6 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
     sys->picQuad.cropViewport.MaxDepth = 1.0f;
 
     SetQuadVSProjection(vd, &sys->picQuad, &vd->cfg->viewpoint);
-    //SetQuadVSProjection(vd, &sys->picQuadRightEye, &vd->cfg->viewpoint);
 
 #ifndef NDEBUG
     msg_Dbg(vd, "picQuad position (%.02f,%.02f) %.02fx%.02f", sys->picQuad.cropViewport.TopLeftX, sys->picQuad.cropViewport.TopLeftY, sys->picQuad.cropViewport.Width, sys->picQuad.cropViewport.Height );

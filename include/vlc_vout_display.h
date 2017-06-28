@@ -76,6 +76,15 @@ enum {
     VOUT_WINDOW_STACK_MASK=3,
 };
 
+typedef enum STEREOSCOPIC_3D_FORMATS {
+    S3D_Disabled,
+    S3D_Auto,
+    S3D_LeftOnly,
+    S3D_RightOnly,
+    S3D_LeftRight,
+    S3D_TopBottom
+} STEREOSCOPIC_3D_FORMATS;
+
 /**
  * Initial/Current configuration for a vout_display_t
  */
@@ -103,6 +112,10 @@ typedef struct {
 
     /* Do we fill up the display with the video */
     bool is_display_filled;
+
+    /* Multiview format for stereoscopic 3D */
+    unsigned multiview_format;
+    unsigned prev_multiview_format;
 
     /* Zoom to use
      * It will be applied to the whole display if b_display_filled is set, otherwise
@@ -177,6 +190,10 @@ enum {
     /* Ask the module to acknowledge/refuse VR/360° viewing direction after
      * being requested externally */
     VOUT_DISPLAY_CHANGE_VIEWPOINT,   /* const vout_display_cfg_t *p_cfg */
+
+    /* Ask the module to acknowledge/refuse a new Stereoscopic 3D format after
+     * being requested externally */
+    VOUT_DISPLAY_CHANGE_MULTIVIEW,   /* const vout_display_cfg_t *p_cfg */
 };
 
 /**
