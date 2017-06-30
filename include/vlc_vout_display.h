@@ -76,15 +76,6 @@ enum {
     VOUT_WINDOW_STACK_MASK=3,
 };
 
-typedef enum STEREOSCOPIC_3D_FORMATS {
-    S3D_Disabled,
-    S3D_Auto,
-    S3D_LeftOnly,
-    S3D_RightOnly,
-    S3D_LeftRight,
-    S3D_TopBottom
-} STEREOSCOPIC_3D_FORMATS;
-
 /**
  * Initial/Current configuration for a vout_display_t
  */

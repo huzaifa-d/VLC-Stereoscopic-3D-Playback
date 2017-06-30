@@ -131,13 +131,10 @@ void vlc_object_set_destructor (vlc_object_t *, vlc_destructor_t);
 #define ZOOM_DOUBLE_KEY_TEXT N_("2:1 Double")
 
 #define S3D_SECTION N_("Zoom")
-#define S3D_ORIGINAL_KEY_TEXT N_("Disabled (Original)")
 #define S3D_AUTO_KEY_TEXT N_("Auto-detect")
 #define S3D_LEFT_ONLY_KEY_TEXT N_("Left Only")
 #define S3D_RIGHT_ONLY_KEY_TEXT N_("Right Only")
-#define S3D_SBS_LR_KEY_TEXT N_("Side-by-Side Left-Right 3D")
-#define S3D_SBS_TB_KEY_TEXT N_("Side-by-Side Top-Bottom 3D")
-
+#define S3D_SBS_STEREO_KEY_TEXT N_("Stereo")
 /**
  * Private LibVLC instance data.
  */

@@ -85,13 +85,11 @@ static const struct
 {
     int i_value;
     char psz_label[27];
-} p_3Dformat_values[] = {
-    { 0, N_("Disabled (Original)") },
-    { 1, N_("Auto-detect") },
-    { 2, N_("Left Only") },
-    { 3, N_("Right Only") },
-    { 4, N_("Side-by-Side Left-Right 3D") },
-    { 5, N_("Side-by-Side Top-Bottom 3D") },
+} p_3D_output_format_values[] = {
+    { 0, N_("Auto-detect") },
+    { 1, N_("Left Only") },
+    { 2, N_("Right Only") },
+    { 3, N_("Stereo") },
 };
 
 static const struct
@@ -202,19 +200,19 @@ void vout_IntfInit( vout_thread_t *p_vout )
 
     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
 
-    var_Create( p_vout, "s3d-format", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
+    var_Create( p_vout, "s3d-output", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
 
-    text.psz_string = _("3d-format");
-    var_Change( p_vout, "s3d-format", VLC_VAR_SETTEXT, &text, NULL );
+    text.psz_string = _("3d-output");
+    var_Change( p_vout, "s3d-output", VLC_VAR_SETTEXT, &text, NULL );
 
-    for( size_t i = 0; i < ARRAY_SIZE(p_3Dformat_values); i++ )
+    for( size_t i = 0; i < ARRAY_SIZE(p_3D_output_format_values); i++ )
     {
-        val.i_int = p_3Dformat_values[i].i_value;
-        text.psz_string = vlc_gettext( p_3Dformat_values[i].psz_label );
-        var_Change( p_vout, "s3d-format", VLC_VAR_ADDCHOICE, &val, &text );
+        val.i_int = p_3D_output_format_values[i].i_value;
+        text.psz_string = vlc_gettext( p_3D_output_format_values[i].psz_label );
+        var_Change( p_vout, "s3d-output", VLC_VAR_ADDCHOICE, &val, &text );
     }
 
-    var_AddCallback( p_vout, "s3d-format", Stereo3DFormatCallback, NULL );
+    var_AddCallback( p_vout, "s3d-output", Stereo3DFormatCallback, NULL );
 
     /* Crop offset vars */
     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
