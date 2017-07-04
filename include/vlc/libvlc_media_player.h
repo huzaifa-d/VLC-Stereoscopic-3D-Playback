@@ -614,8 +614,8 @@ LIBVLC_API int libvlc_media_player_set_evas_object( libvlc_media_player_t *p_mi,
  * or libvlc_audio_set_format_callbacks() as is the channels layout.
  *
  * Note that the number of samples is per channel. For instance, if the audio
- * track sampling rate is 48000 Hz, then 1200 samples represent 25 milliseconds
- * of audio signal - regardless of the number of audio channels. 
+ * track sampling rate is 48000 Hz, then 1200 samples represent 25 milliseconds
+ * of audio signal - regardless of the number of audio channels.
  *
  * \param data data pointer as passed to libvlc_audio_set_callbacks() [IN]
  * \param samples pointer to a table of audio samples to play back [IN]
@@ -811,7 +811,7 @@ LIBVLC_API void libvlc_media_player_set_time( libvlc_media_player_t *p_mi, libvl
 LIBVLC_API float libvlc_media_player_get_position( libvlc_media_player_t *p_mi );
 
 /**
- * Set movie position as percentage between 0.0 and 1.0. 
+ * Set movie position as percentage between 0.0 and 1.0.
  * This has no effect if playback is not enabled.
  * This might not work depending on the underlying input format and protocol.
  *
@@ -1418,7 +1418,7 @@ int libvlc_video_set_track( libvlc_media_player_t *p_mi, int i_track );
  *
  * \param p_mi media player instance
  * \param num number of video output (typically 0 for the first/only one)
- * \param psz_filepath the path where to save the screenshot to
+ * \param psz_filepath the path of a file or a folder to save the screenshot into
  * \param i_width the snapshot's width
  * \param i_height the snapshot's height
  * \return 0 on success, -1 if the video was not found

@@ -49,6 +49,7 @@ extern void DxgiFormatMask(DXGI_FORMAT format, video_format_t *);
 
 typedef struct ID3D11Device ID3D11Device;
 bool isXboxHardware(ID3D11Device *d3ddev);
+bool isNvidiaHardware(ID3D11Device *d3ddev);
 IDXGIAdapter *D3D11DeviceAdapter(ID3D11Device *d3ddev);
 
 static inline bool DeviceSupportsFormat(ID3D11Device *d3ddevice,
@@ -78,8 +79,13 @@ static inline const d3d_format_t *FindD3D11Format(ID3D11Device *d3ddevice,
                               output_format->fourcc == VLC_CODEC_D3D11_OPAQUE_10B))
             continue;
 
-        if( DeviceSupportsFormat( d3ddevice, output_format->formatTexture,
-                                  supportFlags ) )
+        DXGI_FORMAT textureFormat;
+        if (output_format->formatTexture == DXGI_FORMAT_UNKNOWN)
+            textureFormat = output_format->resourceFormat[0];
+        else
+            textureFormat = output_format->formatTexture;
+
+        if( DeviceSupportsFormat( d3ddevice, textureFormat, supportFlags ) )
             return output_format;
     }
     return NULL;

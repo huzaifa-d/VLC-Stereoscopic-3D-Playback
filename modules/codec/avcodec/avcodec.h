@@ -25,10 +25,9 @@
 #include "avcommon.h"
 
 /* VLC <-> avcodec tables */
-int GetFfmpegCodec( vlc_fourcc_t i_fourcc, int *pi_cat,
-                    unsigned *pi_ffmpeg_codec, const char **ppsz_name );
-int GetVlcFourcc( unsigned i_ffmpeg_codec, int *pi_cat,
-                  vlc_fourcc_t *pi_fourcc, const char **ppsz_name );
+bool GetFfmpegCodec( unsigned cat, vlc_fourcc_t i_fourcc,
+                     unsigned *pi_ffmpeg_codec, const char **ppsz_name );
+vlc_fourcc_t GetVlcFourcc( unsigned i_ffmpeg_codec );
 vlc_fourcc_t GetVlcAudioFormat( int i_sample_fmt );
 
 /* Video encoder module */
@@ -36,19 +35,20 @@ int  OpenEncoder ( vlc_object_t * );
 void CloseEncoder( vlc_object_t * );
 
 /* Video Decoder */
-int InitVideoDec( decoder_t *, AVCodecContext *, const AVCodec * );
-void EndVideoDec( decoder_t *p_dec );
+int InitVideoDec( vlc_object_t * );
+void EndVideoDec( vlc_object_t * );
 
 /* Audio Decoder */
-int InitAudioDec( decoder_t *, AVCodecContext *, const AVCodec * );
-void EndAudioDec( decoder_t *p_dec );
+int InitAudioDec( vlc_object_t * );
+void EndAudioDec( vlc_object_t * );
 
 /* Subtitle Decoder */
-int InitSubtitleDec( decoder_t *, AVCodecContext *, const AVCodec * );
+int InitSubtitleDec( vlc_object_t * );
+void EndSubtitleDec( vlc_object_t * );
 
 /* Initialize decoder */
-int ffmpeg_OpenCodec( decoder_t *p_dec );
-void ffmpeg_CloseCodec( decoder_t *p_dec );
+AVCodecContext *ffmpeg_AllocContext( decoder_t *, const AVCodec ** );
+int ffmpeg_OpenCodec( decoder_t *p_dec, AVCodecContext *, const AVCodec * );
 
 /*****************************************************************************
  * Module descriptor help strings
@@ -232,11 +232,6 @@ void ffmpeg_CloseCodec( decoder_t *p_dec );
    "for encoding the audio bitstream. It takes the following options: " \
    "main, low, ssr (not supported),ltp, hev1, hev2 (default: low). " \
    "hev1 and hev2 are currently supported only with libfdk-aac enabled libavcodec" )
-
-#define AVCODEC_COMMON_MEMBERS   \
-    AVCodecContext *p_context;  \
-    const AVCodec  *p_codec;    \
-    bool b_delayed_open;
 
 #ifndef AV_VERSION_INT
 #   define AV_VERSION_INT(a, b, c) ((a)<<16 | (b)<<8 | (c))

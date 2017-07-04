@@ -202,7 +202,7 @@ QSize VideoWidget::physicalSize() const
     HWND hwnd;
     RECT rect;
 
-    QWindow *window = stable->windowHandle();
+    QWindow *window = windowHandle();
     hwnd = static_cast<HWND>(QGuiApplication::platformNativeInterface()->nativeResourceForWindow("handle", window));
 
     GetClientRect(hwnd, &rect);
@@ -262,7 +262,8 @@ void VideoWidget::setSize( unsigned int w, unsigned int h )
 
 bool VideoWidget::nativeEvent( const QByteArray& eventType, void* message, long* )
 {
-#if defined(QT5_HAS_XCB)
+#if defined(QT5_HAS_X11)
+# if defined(QT5_HAS_XCB)
     if ( eventType == "xcb_generic_event_t" )
     {
         const xcb_generic_event_t* xev = static_cast<const xcb_generic_event_t*>( message );
@@ -270,6 +271,7 @@ bool VideoWidget::nativeEvent( const QByteArray& eventType, void* message, long*
         if ( xev->response_type == XCB_CONFIGURE_NOTIFY )
             reportSize();
     }
+# endif
 #endif
 #ifdef _WIN32
     if ( eventType == "windows_generic_MSG" )

@@ -25,7 +25,7 @@
 #import <Cocoa/Cocoa.h>
 #import "misc.h"
 
-@class VLCResizeControl;
+#import "VLCTimeField.h"
 
 /*****************************************************************************
  * VLCControlsBarCommon
@@ -50,7 +50,6 @@
 
 @property (readwrite, strong) IBOutlet VLCTimeField *timeField;
 @property (readwrite, strong) IBOutlet NSButton *fullscreenButton;
-@property (readwrite, strong) IBOutlet VLCResizeControl *resizeView;
 
 @property (readwrite, strong) IBOutlet VLCThreePartImageView *bottomBarView;
 

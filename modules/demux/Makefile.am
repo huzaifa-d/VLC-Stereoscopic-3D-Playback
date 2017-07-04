@@ -205,9 +205,9 @@ libmp4_plugin_la_SOURCES = demux/mp4/mp4.c demux/mp4/mp4.h \
                            demux/mp4/libmp4.c demux/mp4/libmp4.h \
                            demux/mp4/languages.h \
                            demux/asf/asfpacket.c demux/asf/asfpacket.h \
-                           demux/meta_engine/ID3Genres.h \
                            demux/mp4/avci.h \
-                           demux/mp4/essetup.c demux/mp4/meta.c
+                           demux/mp4/essetup.c demux/mp4/meta.c \
+                           meta_engine/ID3Genres.h
 libmp4_plugin_la_LIBADD = $(LIBM)
 libmp4_plugin_la_LDFLAGS = $(AM_LDFLAGS)
 if HAVE_ZLIB
@@ -222,7 +222,6 @@ libplaylist_plugin_la_SOURCES = \
 	demux/playlist/asx.c \
 	demux/playlist/b4s.c \
 	demux/playlist/dvb.c \
-	demux/playlist/gvp.c \
 	demux/playlist/ifo.c \
 	demux/playlist/itml.c \
 	demux/playlist/itml.h \
@@ -249,6 +248,7 @@ libts_plugin_la_SOURCES = demux/mpeg/ts.c demux/mpeg/ts.h \
         demux/mpeg/ts_scte.h demux/mpeg/ts_scte.c \
         demux/mpeg/sections.c demux/mpeg/sections.h \
         demux/mpeg/mpeg4_iod.c demux/mpeg/mpeg4_iod.h \
+        demux/mpeg/ts_arib.c demux/mpeg/ts_arib.h \
         demux/mpeg/ts_sl.c demux/mpeg/ts_sl.h \
         demux/mpeg/ts_metadata.c demux/mpeg/ts_metadata.h \
         demux/mpeg/ts_hotfixes.c demux/mpeg/ts_hotfixes.h \

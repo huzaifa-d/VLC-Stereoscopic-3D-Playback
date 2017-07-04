@@ -1,10 +1,12 @@
 /*****************************************************************************
- * VLCHUDImageButton.h
+ * VLCTimeField.h: NSTextField subclass for playback time fields
  *****************************************************************************
- * Copyright (C) 2017 VLC authors and VideoLAN
+ * Copyright (C) 2003-2017 VLC authors and VideoLAN
  * $Id$
  *
- * Authors: Cameron Mozie <camsw0rld14@gmail.com>
+ * Authors: Jon Lech Johansen <jon-vl@nanocrew.net>
+ *          Felix Paul Kühne <fkuehne at videolan dot org>
+ *          Marvin Scholz <epirat07 at gmail dot com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +25,16 @@
 
 #import <Cocoa/Cocoa.h>
 
-@interface VLCHUDImageButton : NSButton
+/*****************************************************************************
+ * VLCTimeField interface
+ *****************************************************************************
+ * we need the implementation to catch our click-event in the controller window
+ *****************************************************************************/
+
+@interface VLCTimeField : NSTextField
+
+@property (readonly) BOOL timeRemaining;
+
+- (void)setRemainingIdentifier:(NSString *)o_string;
 
 @end

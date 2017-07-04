@@ -920,7 +920,7 @@ static int ZeroNsmAdvance( paragraph_t *p_paragraph )
  */
 static int LoadGlyphs( filter_t *p_filter, paragraph_t *p_paragraph,
                        bool b_use_glyph_indices, bool b_overwrite_advance,
-                       int *pi_max_advance_x )
+                       unsigned *pi_max_advance_x )
 {
     if( p_paragraph->i_size <= 0 || p_paragraph->i_runs_count <= 0 )
     {
@@ -1062,24 +1062,24 @@ static int LoadGlyphs( filter_t *p_filter, paragraph_t *p_paragraph,
 
 static int LayoutLine( filter_t *p_filter,
                        paragraph_t *p_paragraph,
-                       int i_start_offset, int i_end_offset,
+                       int i_first_char, int i_last_char,
                        line_desc_t **pp_line, bool b_grid )
 {
     if( p_paragraph->i_size <= 0 || p_paragraph->i_runs_count <= 0
-     || i_start_offset >= i_end_offset
-     || i_start_offset < 0 || i_start_offset >= p_paragraph->i_size
-     || i_end_offset <= 0  || i_end_offset > p_paragraph->i_size )
+     || i_first_char < 0 || i_last_char < 0
+     || i_first_char > i_last_char
+     || i_last_char >= p_paragraph->i_size )
     {
         msg_Err( p_filter,
                  "LayoutLine() invalid parameters. "
                  "Paragraph size: %d. Runs count: %d. "
-                 "Start offset: %d. End offset: %d",
+                 "Start char: %d. End char: %d",
                  p_paragraph->i_size, p_paragraph->i_runs_count,
-                 i_start_offset, i_end_offset );
+                 i_first_char, i_last_char );
         return VLC_EGENERIC;
     }
 
-    line_desc_t *p_line = NewLine( i_end_offset - i_start_offset );
+    line_desc_t *p_line = NewLine( 1 + i_last_char - i_first_char );
 
     if( !p_line )
         return VLC_ENOMEM;
@@ -1099,14 +1099,14 @@ static int LayoutLine( filter_t *p_filter,
     int i_ul_thickness = 0;
 
 #ifdef HAVE_FRIBIDI
-    fribidi_reorder_line( 0, p_paragraph->p_types + i_start_offset,
-                          i_end_offset - i_start_offset,
+    fribidi_reorder_line( 0, &p_paragraph->p_types[i_first_char],
+                          1 + i_last_char - i_first_char,
                           0, p_paragraph->paragraph_type,
-                          p_paragraph->p_levels + i_start_offset,
-                          0, p_paragraph->pi_reordered_indices + i_start_offset );
+                          &p_paragraph->p_levels[i_first_char],
+                          0, &p_paragraph->pi_reordered_indices[i_first_char] );
 #endif
 
-    for( int i = i_start_offset; i < i_end_offset; ++i, ++i_line_index )
+    for( int i = i_first_char; i <= i_last_char; ++i, ++i_line_index )
     {
         int i_paragraph_index;
 #ifdef HAVE_FRIBIDI
@@ -1302,9 +1302,26 @@ static int LayoutLine( filter_t *p_filter,
     return VLC_SUCCESS;
 }
 
+static inline void ReleaseGlyphBitMaps(glyph_bitmaps_t *p_bitmaps)
+{
+    if( p_bitmaps->p_glyph )
+        FT_Done_Glyph( p_bitmaps->p_glyph );
+    if( p_bitmaps->p_outline )
+        FT_Done_Glyph( p_bitmaps->p_outline );
+}
+
+static inline bool IsWhitespaceAt( paragraph_t *p_paragraph, size_t i )
+{
+    return ( p_paragraph->p_code_points[ i ] == ' '
+#ifdef HAVE_FRIBIDI
+            || p_paragraph->p_types[ i ] == FRIBIDI_TYPE_WS
+#endif
+    );
+}
+
 static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
-                            int i_max_pixel_width, line_desc_t **pp_lines,
-                            bool b_grid )
+                            unsigned i_max_width, unsigned i_max_advance_x,
+                            line_desc_t **pp_lines, bool b_grid, bool b_balance )
 {
     if( p_paragraph->i_size <= 0 || p_paragraph->i_runs_count <= 0 )
     {
@@ -1314,14 +1331,26 @@ static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
         return VLC_EGENERIC;
     }
 
+    /*
+     * Check max line width to allow for outline and shadow glyphs,
+     * and any extra width caused by visual reordering
+     */
+    if( i_max_width <= i_max_advance_x )
+    {
+        msg_Err( p_filter, "LayoutParagraph(): Invalid max width" );
+        return VLC_EGENERIC;
+    }
+
+    i_max_width <<= 6;
+    i_max_advance_x <<= 6;
+
     int i_line_start = 0;
     FT_Pos i_width = 0;
-    FT_Pos i_max_width = i_max_pixel_width << 6;
-    FT_Pos i_preferred_width = 0;
+    FT_Pos i_preferred_width = i_max_width;
     FT_Pos i_total_width = 0;
     FT_Pos i_last_space_width = 0;
     int i_last_space = -1;
-    line_desc_t *p_first_line = 0;
+    line_desc_t *p_first_line = NULL;
     line_desc_t **pp_line = &p_first_line;
 
     for( int i = 0; i < p_paragraph->i_size; ++i )
@@ -1329,11 +1358,25 @@ static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
 #ifdef HAVE_FRIBIDI
         p_paragraph->pi_reordered_indices[ i ] = i;
 #endif
-        i_total_width += p_paragraph->p_glyph_bitmaps[ i ].i_x_advance;
+        if( !IsWhitespaceAt( p_paragraph, i ) || i != i_last_space + 1 )
+            i_total_width += p_paragraph->p_glyph_bitmaps[ i ].i_x_advance;
+        else
+            i_last_space = i;
+    }
+    i_last_space = -1;
+
+    if( i_total_width == 0 )
+    {
+        for( int i=0; i < p_paragraph->i_size; ++i )
+            ReleaseGlyphBitMaps( &p_paragraph->p_glyph_bitmaps[ i ] );
+        return VLC_SUCCESS;
     }
 
-    int i_line_count = i_total_width / i_max_width + 1;
-    i_preferred_width = i_total_width / i_line_count;
+    if( b_balance )
+    {
+        int i_line_count = i_total_width / (i_max_width - i_max_advance_x) + 1;
+        i_preferred_width = i_total_width / i_line_count;
+    }
 
     for( int i = 0; i <= p_paragraph->i_size; ++i )
     {
@@ -1341,17 +1384,13 @@ static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
         {
             if( i_line_start < i )
                 if( LayoutLine( p_filter, p_paragraph,
-                                i_line_start, i, pp_line, b_grid ) )
+                                i_line_start, i - 1, pp_line, b_grid ) )
                     goto error;
 
             break;
         }
 
-        if( p_paragraph->p_code_points[ i ] == ' '
-#ifdef HAVE_FRIBIDI
-            || p_paragraph->p_types[ i ] == FRIBIDI_TYPE_WS
-#endif
-          )
+        if( IsWhitespaceAt( p_paragraph, i ) )
         {
             if( i_line_start == i )
             {
@@ -1360,11 +1399,7 @@ static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
                  * At this point p_shadow points to either p_glyph or p_outline,
                  * so we should not free it explicitly.
                  */
-                if( p_paragraph->p_glyph_bitmaps[ i ].p_glyph )
-                    FT_Done_Glyph( p_paragraph->p_glyph_bitmaps[ i ].p_glyph );
-                if( p_paragraph->p_glyph_bitmaps[ i ].p_outline )
-                    FT_Done_Glyph( p_paragraph->p_glyph_bitmaps[ i ].p_outline );
-
+                ReleaseGlyphBitMaps( &p_paragraph->p_glyph_bitmaps[ i ] );
                 i_line_start = i + 1;
                 continue;
             }
@@ -1380,34 +1415,62 @@ static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
             i_last_space_width = i_width;
         }
 
-        i_width += p_paragraph->p_glyph_bitmaps[ i ].i_x_advance;
+        const run_desc_t *p_run = &p_paragraph->p_runs[p_paragraph->pi_run_ids[i]];
+        const int i_advance_x = p_paragraph->p_glyph_bitmaps[ i ].i_x_advance;
 
-        if( i_last_space_width >= i_preferred_width
-         || i_width >= i_max_width )
+        if( ( i_last_space_width + i_advance_x >= i_preferred_width &&
+              p_run->p_style->e_wrapinfo == STYLE_WRAP_DEFAULT )
+            || i_width + i_advance_x >= i_max_width )
         {
             if( i_line_start == i )
             {
-                msg_Err( p_filter,
-                         "LayoutParagraph(): Width of single glyph exceeds maximum" );
-                goto error;
+                /* If wrapping, algorithm would not end shifting lines down.
+                 *  Not wrapping, that can't be rendered anymore. */
+                msg_Dbg( p_filter, "LayoutParagraph(): First glyph width in line exceeds maximum, skipping" );
+                for( ; i < p_paragraph->i_size; ++i )
+                    ReleaseGlyphBitMaps( &p_paragraph->p_glyph_bitmaps[ i ] );
+                return VLC_SUCCESS;
             }
 
-            int i_end_offset;
-            if( i_last_space > i_line_start )
-                i_end_offset = i_last_space;
+            int i_newline_start;
+            if( i_last_space > i_line_start && p_run->p_style->e_wrapinfo == STYLE_WRAP_DEFAULT )
+                i_newline_start = i_last_space; /* we break line on last space */
             else
-                i_end_offset = i;
+                i_newline_start = i; /* we break line on last char */
 
             if( LayoutLine( p_filter, p_paragraph, i_line_start,
-                            i_end_offset, pp_line, b_grid ) )
+                            i_newline_start - 1, pp_line, b_grid ) )
                 goto error;
 
+            /* Handle early end of renderable content;
+               We're over size and we can't break space */
+            if( p_run->p_style->e_wrapinfo == STYLE_WRAP_NONE )
+            {
+                for( ; i < p_paragraph->i_size; ++i )
+                    ReleaseGlyphBitMaps( &p_paragraph->p_glyph_bitmaps[ i ] );
+                break;
+            }
+
             pp_line = &( *pp_line )->p_next;
-            i_line_start = i_end_offset;
-            i = i_line_start - 1;
-            i_width = 0;
+
+            /* If we created a line up to previous space, we only keep the difference for
+               our current width since that split */
+            if( i_newline_start == i_last_space )
+            {
+                i_width = i_width - i_last_space_width;
+                if( i_newline_start + 1 < p_paragraph->i_size )
+                    i_line_start = i_newline_start + 1;
+                else
+                    i_line_start = i_newline_start; // == i
+            }
+            else
+            {
+                i_width = 0;
+                i_line_start = i_newline_start;
+            }
             i_last_space_width = 0;
         }
+        i_width += i_advance_x;
     }
 
     *pp_lines = p_first_line;
@@ -1415,29 +1478,26 @@ static int LayoutParagraph( filter_t *p_filter, paragraph_t *p_paragraph,
 
 error:
     for( int i = i_line_start; i < p_paragraph->i_size; ++i )
-    {
-        if( p_paragraph->p_glyph_bitmaps[ i ].p_glyph )
-            FT_Done_Glyph( p_paragraph->p_glyph_bitmaps[ i ].p_glyph );
-        if( p_paragraph->p_glyph_bitmaps[ i ].p_outline )
-            FT_Done_Glyph( p_paragraph->p_glyph_bitmaps[ i ].p_outline );
-    }
+        ReleaseGlyphBitMaps( &p_paragraph->p_glyph_bitmaps[ i ] );
     if( p_first_line )
         FreeLines( p_first_line );
     return VLC_EGENERIC;
 }
 
-int LayoutText( filter_t *p_filter, line_desc_t **pp_lines,
-                FT_BBox *p_bbox, int *pi_max_face_height,
-
+int LayoutText( filter_t *p_filter,
                 const uni_char_t *psz_text, text_style_t **pp_styles,
-                uint32_t *pi_k_dates, int i_len, bool b_grid )
+                uint32_t *pi_k_dates, int i_len,
+                bool b_grid, bool b_balance,
+                unsigned i_max_width, unsigned i_max_height,
+                line_desc_t **pp_lines, FT_BBox *p_bbox, int *pi_max_face_height )
 {
     line_desc_t *p_first_line = 0;
     line_desc_t **pp_line = &p_first_line;
     paragraph_t *p_paragraph = 0;
     int i_paragraph_start = 0;
-    int i_max_height = 0;
-    int i_max_advance_x = 0;
+    unsigned i_total_height = 0;
+    unsigned i_max_advance_x = 0;
+    int i_max_face_height = 0;
 
     for( int i = 0; i <= i_len; ++i )
     {
@@ -1490,28 +1550,36 @@ int LayoutText( filter_t *p_filter, line_desc_t **pp_lines,
                 goto error;
 #endif
 
-            /*
-             * Set max line width to allow for outline and shadow glyphs,
-             * and any extra width caused by visual reordering
-             */
-            int i_max_width = ( int ) p_filter->fmt_out.video.i_visible_width - i_max_advance_x;
-
-            if( i_max_width <= 0 )
-            {
-                msg_Err( p_filter, "LayoutText(): Invalid max width" );
-                goto error;
-            }
-
             if( LayoutParagraph( p_filter, p_paragraph,
-                                 i_max_width, pp_line, b_grid ) )
+                                 i_max_width, i_max_advance_x, pp_line,
+                                 b_grid, b_balance ) )
                 goto error;
 
             FreeParagraph( p_paragraph );
             p_paragraph = 0;
 
-            for( ; *pp_line; pp_line = &( *pp_line )->p_next )
-                i_max_height = __MAX( i_max_height, ( *pp_line )->i_height );
-
+            for( ; *pp_line; pp_line = &(*pp_line)->p_next )
+            {
+                i_total_height += (*pp_line)->i_height;
+                if( i_max_height > 0 && i_total_height > i_max_height )
+                {
+                    i_total_height = i_max_height + 1;
+                    line_desc_t *p_todelete = *pp_line;
+                    while( p_todelete ) /* Drop extra lines */
+                    {
+                        line_desc_t *p_next = p_todelete->p_next;
+                        FreeLine( p_todelete );
+                        p_todelete = p_next;
+                    }
+                    *pp_line = NULL;
+                    i = i_len + 1; /* force no more paragraphs */
+                    break; /* ! no p_next ! */
+                }
+                else if( (*pp_line)->i_height > i_max_face_height )
+                {
+                    i_max_face_height = (*pp_line)->i_height;
+                }
+            }
             i_paragraph_start = i + 1;
         }
     }
@@ -1531,12 +1599,12 @@ int LayoutText( filter_t *p_filter, line_desc_t **pp_lines,
         p_line->bbox.yMax -= i_base_line;
         BBoxEnlarge( &bbox, &p_line->bbox );
 
-        i_base_line += i_max_height;
+        i_base_line += i_max_face_height;
     }
 
+    *pi_max_face_height = i_max_face_height;
     *pp_lines = p_first_line;
     *p_bbox = bbox;
-    *pi_max_face_height = i_max_height;
     return VLC_SUCCESS;
 
 error:

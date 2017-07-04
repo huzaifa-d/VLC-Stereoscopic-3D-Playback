@@ -23,7 +23,10 @@
 #ifndef LIBVLC_VARIABLES_H
 # define LIBVLC_VARIABLES_H 1
 
+# include <stdalign.h>
 # include <vlc_atomic.h>
+
+struct vlc_res;
 
 /**
  * Private LibVLC data for each object.
@@ -48,13 +51,30 @@ struct vlc_object_internals
     vlc_object_internals_t *prev;  /* previous sibling */
     vlc_object_internals_t *first; /* first child */
     vlc_mutex_t tree_lock;
+
+    /* Object resources */
+    struct vlc_res *resources;
+
+    max_align_t aligned_end[];
 };
 
-# define vlc_internals( obj ) (((vlc_object_internals_t*)(VLC_OBJECT(obj)))-1)
-# define vlc_externals( priv ) ((vlc_object_t *)((priv) + 1))
+# define vlc_internals(obj) \
+    container_of(VLC_OBJECT(obj), struct vlc_object_internals, aligned_end)
+# define vlc_externals(priv ) ((vlc_object_t *)((priv)->aligned_end))
 
 void DumpVariables(vlc_object_t *obj);
 
 extern void var_DestroyAll( vlc_object_t * );
+
+/**
+ * Return a list of all variable names
+ *
+ * There is no warranty that the returned variables will be still alive after
+ * the return of this function.
+ *
+ * @return a NULL terminated list of char *, each elements and the return value
+ * must be freed by the caller
+ */
+char **var_GetAllNames(vlc_object_t *);
 
 #endif

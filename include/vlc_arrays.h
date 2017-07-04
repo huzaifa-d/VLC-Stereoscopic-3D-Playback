@@ -157,7 +157,7 @@ static inline void *realloc_down( void *ptr, size_t size )
     if( (array).i_alloc < 10 )                                              \
         _ARRAY_ALLOC(array, 10 )                                            \
     else if( (array).i_alloc == (array).i_size )                            \
-        _ARRAY_ALLOC(array, (int)(array.i_alloc * 1.5) )                    \
+        _ARRAY_ALLOC(array, (int)((array).i_alloc * 1.5) )                    \
 }
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -471,6 +471,16 @@ vlc_dictionary_keys_count( const vlc_dictionary_t * p_dict )
         for( p_entry = p_dict->p_entries[i]; p_entry; p_entry = p_entry->p_next ) count++;
     }
     return count;
+}
+
+static inline bool
+vlc_dictionary_is_empty( const vlc_dictionary_t * p_dict )
+{
+    if( p_dict->p_entries )
+        for( int i = 0; i < p_dict->i_size; i++ )
+            if( p_dict->p_entries[i] )
+                return false;
+    return true;
 }
 
 static inline char **

@@ -1,10 +1,10 @@
 /*****************************************************************************
- * VLCHUDToggleButton.h
+ * VLCHexNumberFormatter.h
  *****************************************************************************
  * Copyright (C) 2017 VLC authors and VideoLAN
  * $Id$
  *
- * Authors: Cameron Mozie <camsw0rld14@gmail.com>
+ * Authors: Marvin Scholz <epirat07 at gmail dot com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,8 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
-#import "VLCHUDImageButton.h"
+#import <Foundation/Foundation.h>
 
-@interface VLCHUDToggleButton : VLCHUDImageButton
+@interface VLCHexNumberFormatter : NSFormatter
 
 @end

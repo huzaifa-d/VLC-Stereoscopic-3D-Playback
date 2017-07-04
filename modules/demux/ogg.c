@@ -299,6 +299,15 @@ static int Demux( demux_t * p_demux )
         if ( p_sys->i_streams ) /* All finished */
         {
             msg_Dbg( p_demux, "end of a group of logical streams" );
+
+            mtime_t i_lastpcr = VLC_TS_INVALID;
+            for( i_stream = 0; i_stream < p_sys->i_streams; i_stream++ )
+            {
+                logical_stream_t *p_stream = p_sys->pp_stream[i_stream];
+                if( p_stream->i_pcr > i_lastpcr )
+                    i_lastpcr = p_stream->i_pcr;
+            }
+
             /* We keep the ES to try reusing it in Ogg_BeginningOfStream
              * only 1 ES is supported (common case for ogg web radio) */
             if( p_sys->i_streams == 1 )
@@ -306,9 +315,16 @@ static int Demux( demux_t * p_demux )
                 p_sys->p_old_stream = p_sys->pp_stream[0];
                 TAB_CLEAN( p_sys->i_streams, p_sys->pp_stream );
             }
+
             Ogg_EndOfStream( p_demux );
             p_sys->b_chained_boundary = true;
-            p_sys->i_nzpcr_offset = p_sys->i_nzlast_pts;
+
+            if( i_lastpcr > VLC_TS_INVALID )
+            {
+                p_sys->i_nzpcr_offset = i_lastpcr - VLC_TS_0;
+                es_out_Control( p_demux->out, ES_OUT_SET_PCR, i_lastpcr );
+            }
+            p_sys->i_pcr = VLC_TS_INVALID;
         }
 
         if( Ogg_BeginningOfStream( p_demux ) != VLC_SUCCESS )
@@ -401,7 +417,8 @@ static int Demux( demux_t * p_demux )
             {
                 msg_Err( p_demux, "Broken Ogg stream (serialno) mismatch" );
                 Ogg_ResetStream( p_stream );
-                p_sys->i_nzpcr_offset = p_sys->i_nzlast_pts;
+                if( p_stream->i_pcr > VLC_TS_INVALID )
+                    p_sys->i_nzpcr_offset = p_stream->i_pcr - VLC_TS_0;
                 ogg_stream_reset_serialno( &p_stream->os, ogg_page_serialno( &p_sys->current_page ) );
             }
 
@@ -571,7 +588,8 @@ static int Demux( demux_t * p_demux )
                     if ( pagestamp < 0 )
                     {
                         p_block->i_pts = VLC_TS_INVALID;
-                        p_block->i_flags |= BLOCK_FLAG_PREROLL;
+                        if( p_sys->i_nzpcr_offset == 0 ) /* not on chained streams */
+                            p_block->i_flags |= BLOCK_FLAG_PREROLL;
                     }
                     else
                         p_block->i_pts = VLC_TS_0 + p_sys->i_nzpcr_offset + pagestamp;
@@ -591,6 +609,7 @@ static int Demux( demux_t * p_demux )
 
             if ( b_fixed )
             {
+                pagestamp = p_stream->i_previous_pcr; /* as set above */
                 if ( pagestamp < 0 ) pagestamp = 0;
                 p_stream->i_pcr = VLC_TS_0 + pagestamp;
                 p_stream->i_pcr += p_sys->i_nzpcr_offset;
@@ -764,9 +783,13 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
             return VLC_SUCCESS;
 
         case DEMUX_GET_TIME:
-            pi64 = va_arg( args, int64_t * );
-            *pi64 = p_sys->i_pcr;
-            return VLC_SUCCESS;
+            if( p_sys->i_pcr > VLC_TS_INVALID )
+            {
+                pi64 = va_arg( args, int64_t * );
+                *pi64 = p_sys->i_pcr;
+                return VLC_SUCCESS;
+            }
+            return VLC_EGENERIC;
 
         case DEMUX_SET_TIME:
             i64 = va_arg( args, int64_t );
@@ -805,7 +828,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
 
         case DEMUX_GET_POSITION:
             pf = va_arg( args, double * );
-            if( p_sys->i_length > 0 )
+            if( p_sys->i_length > 0 && p_sys->i_pcr > VLC_TS_INVALID )
             {
                 *pf =  (double) p_sys->i_pcr /
                        (double) ( p_sys->i_length * (mtime_t)1000000 );
@@ -1087,7 +1110,8 @@ static void Ogg_SendOrQueueBlocks( demux_t *p_demux, logical_stream_t *p_stream,
                                    block_t *p_block )
 {
     demux_sys_t *p_ogg = p_demux->p_sys;
-    if ( !p_stream->p_es || p_stream->prepcr.pp_blocks || p_stream->i_pcr == VLC_TS_UNKNOWN )
+    if ( (!p_stream->p_es || p_stream->prepcr.pp_blocks || p_stream->i_pcr == VLC_TS_UNKNOWN) &&
+         p_ogg->i_nzpcr_offset == 0 /* Not on chained streams */ )
     {
         if ( !p_block ) return;
         if ( p_stream->prepcr.pp_blocks )
@@ -1141,7 +1165,6 @@ static void Ogg_SendOrQueueBlocks( demux_t *p_demux, logical_stream_t *p_stream,
 
         if ( p_block )
         {
-            p_ogg->i_nzlast_pts = (p_block->i_pts > VLC_TS_INVALID) ? p_block->i_pts - VLC_TS_0 : 0;
             DemuxDebug( msg_Dbg( p_demux, "block sent directly > pts %"PRId64" spcr %"PRId64" pcr %"PRId64,
                      p_block->i_pts, p_stream->i_pcr, p_ogg->i_pcr ) );
             es_out_Send( p_demux->out, p_stream->p_es, p_block );
@@ -1349,7 +1372,8 @@ static void Ogg_DecodePacket( demux_t *p_demux,
         {
             if( p_stream->i_skip_frames >= p_block->i_nb_samples )
             {
-                p_block->i_flags |= BLOCK_FLAG_PREROLL;
+                if( p_demux->p_sys->i_nzpcr_offset == 0 ) /* not on chained streams */
+                    p_block->i_flags |= BLOCK_FLAG_PREROLL;
                 p_stream->i_skip_frames -= p_block->i_nb_samples;
                 p_block->i_nb_samples = 0;
             }
@@ -1361,7 +1385,8 @@ static void Ogg_DecodePacket( demux_t *p_demux,
         }
         else
         {
-            p_block->i_flags |= BLOCK_FLAG_PREROLL;
+            if( p_demux->p_sys->i_nzpcr_offset == 0 ) /* not on chained streams */
+                p_block->i_flags |= BLOCK_FLAG_PREROLL;
             p_stream->i_skip_frames--;
         }
     }
@@ -2201,8 +2226,6 @@ static void Ogg_EndOfStream( demux_t *p_demux )
     p_ogg->skeleton.minor = 0;
     p_ogg->b_preparsing_done = false;
     p_ogg->b_es_created = false;
-    p_ogg->i_nzpcr_offset = (p_ogg->i_pcr >= VLC_TS_INVALID) ?
-                          p_ogg->i_pcr - VLC_TS_0 : 0;
 
     /* */
     if( p_ogg->p_meta )

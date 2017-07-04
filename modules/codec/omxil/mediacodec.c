@@ -180,7 +180,7 @@ vlc_module_begin ()
     set_category(CAT_INPUT)
     set_subcategory(SUBCAT_INPUT_VCODEC)
     set_section(N_("Decoding"), NULL)
-    set_capability("decoder", 0) /* Only enabled via commandline arguments */
+    set_capability("video decoder", 0) /* Only enabled via commandline arguments */
     add_bool(CFG_PREFIX "dr", true,
              DIRECTRENDERING_TEXT, DIRECTRENDERING_LONGTEXT, true)
     add_bool(CFG_PREFIX "audio", false,
@@ -190,8 +190,16 @@ vlc_module_begin ()
     set_callbacks(OpenDecoderNdk, CloseDecoder)
     add_shortcut("mediacodec_ndk")
     add_submodule ()
+        set_capability("audio decoder", 0)
+        set_callbacks(OpenDecoderNdk, CloseDecoder)
+        add_shortcut("mediacodec_ndk")
+    add_submodule ()
         set_description("Video decoder using Android MediaCodec via JNI")
-        set_capability("decoder", 0)
+        set_capability("video decoder", 0)
+        set_callbacks(OpenDecoderJni, CloseDecoder)
+        add_shortcut("mediacodec_jni")
+    add_submodule ()
+        set_capability("audio decoder", 0)
         set_callbacks(OpenDecoderJni, CloseDecoder)
         add_shortcut("mediacodec_jni")
 vlc_module_end ()
@@ -370,7 +378,6 @@ static int ParseVideoExtraWmv3(decoder_t *p_dec, uint8_t *p_extra, int i_extra)
     SetDWLE(&(p_data[12]), p_dec->fmt_in.video.i_height);
     SetDWLE(&(p_data[16]), p_dec->fmt_in.video.i_width);
 
-    p_dec->p_sys->pf_on_new_block = VideoVC1_OnNewBlock;
     return CSDDup(p_dec, p_data, sizeof(p_data));
 }
 

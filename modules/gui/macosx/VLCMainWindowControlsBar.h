@@ -26,8 +26,6 @@
 #import "misc.h"
 #import "VLCControlsBarCommon.h"
 
-@class VLCResizeControl;
-
 /*****************************************************************************
  * VLCMainWindowControlsBar
  *
@@ -39,11 +37,16 @@
 @property (readwrite, strong) IBOutlet NSButton *stopButton;
 
 @property (readwrite, strong) IBOutlet NSButton *prevButton;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *prevButtonWidthConstraint;
 @property (readwrite, strong) IBOutlet NSButton *nextButton;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *nextButtonWidthConstraint;
 
 @property (readwrite, strong) IBOutlet NSButton *playlistButton;
 @property (readwrite, strong) IBOutlet NSButton *repeatButton;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *repeatButtonWidthConstraint;
+
 @property (readwrite, strong) IBOutlet NSButton *shuffleButton;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *shuffleButtonWidthConstraint;
 
 @property (readwrite, strong) IBOutlet VLCVolumeSliderCommon * volumeSlider;
 @property (readwrite, strong) IBOutlet NSImageView *volumeTrackImageView;
@@ -51,6 +54,7 @@
 @property (readwrite, strong) IBOutlet NSButton *volumeUpButton;
 
 @property (readwrite, strong) IBOutlet NSButton *effectsButton;
+@property (readwrite, strong) IBOutlet NSLayoutConstraint *effectsButtonWidthConstraint;
 
 - (IBAction)stop:(id)sender;
 
@@ -64,7 +68,6 @@
 - (IBAction)repeat:(id)sender;
 
 - (void)setShuffle;
-- (IBAction)shuffle:(id)sender;
 
 - (IBAction)togglePlaylist:(id)sender;
 

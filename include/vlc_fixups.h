@@ -45,6 +45,18 @@
 # endif
 #endif
 
+#ifndef __cplusplus
+# ifdef HAVE_THREADS_H
+#  include <threads.h>
+# elif !defined(thread_local)
+#  ifdef HAVE_THREAD_LOCAL
+#   define thread_local _Thread_local
+#  elif defined(_MSC_VER)
+#   define thread_local __declspec(thread)
+#  endif
+# endif
+#endif
+
 #if !defined (HAVE_GMTIME_R) || !defined (HAVE_LOCALTIME_R) \
  || !defined (HAVE_TIMEGM)
 # include <time.h> /* time_t */
@@ -76,7 +88,7 @@ typedef struct
 # include <stdio.h> /* FILE */
 #endif
 
-#if !defined (HAVE_POSIX_MEMALIGN) || \
+#if !defined (HAVE_ALIGNED_ALLOC) || \
     !defined (HAVE_MEMRCHR) || \
     !defined (HAVE_STRLCPY) || \
     !defined (HAVE_STRNDUP) || \
@@ -290,8 +302,16 @@ int setenv (const char *, const char *, int);
 int unsetenv (const char *);
 #endif
 
-#ifndef HAVE_POSIX_MEMALIGN
-int posix_memalign (void **, size_t, size_t);
+#ifndef HAVE_ALIGNED_ALLOC
+void *aligned_alloc(size_t, size_t);
+#endif
+
+#if defined (_WIN32) && defined(__MINGW32__)
+#define aligned_free(ptr)  __mingw_aligned_free(ptr)
+#elif defined (_WIN32) && defined(_MSC_VER)
+#define aligned_free(ptr)  _aligned_free(ptr)
+#else
+#define aligned_free(ptr)  free(ptr)
 #endif
 
 #if defined(__native_client__) && defined(__cplusplus)

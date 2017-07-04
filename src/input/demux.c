@@ -65,7 +65,6 @@ static const char *demux_NameFromMimeType(const char *mime)
         { "audio/aac",           "m4a"     },
         { "audio/aacp",          "m4a"     },
         { "audio/mpeg",          "mp3"     },
-        { "application/rss+xml", "podcast" },
         //{ "video/MP1S",          "es,mpgv" }, !b_force
         { "video/dv",            "rawdv"   },
         { "video/MP2P",          "ps"      },
@@ -476,6 +475,13 @@ int demux_vaControlHelper( stream_t *s,
         case DEMUX_TEST_AND_CLEAR_FLAGS:
         case DEMUX_GET_TITLE:
         case DEMUX_GET_SEEKPOINT:
+        case DEMUX_NAV_ACTIVATE:
+        case DEMUX_NAV_UP:
+        case DEMUX_NAV_DOWN:
+        case DEMUX_NAV_LEFT:
+        case DEMUX_NAV_RIGHT:
+        case DEMUX_NAV_POPUP:
+        case DEMUX_NAV_MENU:
             return VLC_EGENERIC;
 
         case DEMUX_SET_TITLE:

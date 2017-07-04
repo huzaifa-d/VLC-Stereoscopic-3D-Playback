@@ -196,6 +196,12 @@ char *vlc_stream_ReadLine( stream_t *s )
         {
             const char *psz_encoding = NULL;
 
+            if( unlikely(priv->text.conv != (vlc_iconv_t)-1) )
+            {   /* seek back to beginning? reset */
+                vlc_iconv_close( priv->text.conv );
+                priv->text.conv = (vlc_iconv_t)-1;
+            }
+
             if( !memcmp( p_data, "\xFF\xFE", 2 ) )
             {
                 psz_encoding = "UTF-16LE";
@@ -210,10 +216,13 @@ char *vlc_stream_ReadLine( stream_t *s )
             if( psz_encoding != NULL )
             {
                 msg_Dbg( s, "UTF-16 BOM detected" );
-                priv->text.char_width = 2;
                 priv->text.conv = vlc_iconv_open( "UTF-8", psz_encoding );
-                if( priv->text.conv == (vlc_iconv_t)-1 )
+                if( unlikely(priv->text.conv == (vlc_iconv_t)-1) )
+                {
                     msg_Err( s, "iconv_open failed" );
+                    goto error;
+                }
+                priv->text.char_width = 2;
             }
         }
 

@@ -660,11 +660,9 @@ static int Open( vlc_object_t * p_this )
 
     MP4_Box_t       *p_ftyp;
     MP4_Box_t       *p_rmra;
-    MP4_Box_t       *p_trak;
     const MP4_Box_t *p_mvhd = NULL;
     const MP4_Box_t *p_mvex = NULL;
 
-    unsigned int    i;
     bool      b_enabled_es;
 
     /* A little test to see if it could be a mp4 */
@@ -870,7 +868,10 @@ static int Open( vlc_object_t * p_this )
             }
             free( psz_ref );
         }
-        input_item_node_PostAndDelete( p_subitems );
+
+        /* FIXME: create a stream_filter sub-module for this */
+        if (es_out_Control(p_demux->out, ES_OUT_POST_SUBNODE, p_subitems))
+            input_item_node_Delete(p_subitems);
     }
 
     if( !(p_mvhd = MP4_BoxGet( p_sys->p_root, "/moov/mvhd" ) ) )
@@ -912,7 +913,7 @@ static int Open( vlc_object_t * p_this )
      * check that at least 1 stream is enabled */
     p_sys->p_tref_chap = NULL;
     b_enabled_es = false;
-    for( i = 0; i < p_sys->i_tracks; i++ )
+    for( unsigned i = 0; i < p_sys->i_tracks; i++ )
     {
         MP4_Box_t *p_trak = MP4_BoxGet( p_sys->p_root, "/moov/trak[%d]", i );
 
@@ -932,9 +933,9 @@ static int Open( vlc_object_t * p_this )
         MP4_LoadMeta( p_sys, p_sys->p_meta );
 
     /* now process each track and extract all useful information */
-    for( i = 0; i < p_sys->i_tracks; i++ )
+    for( unsigned i = 0; i < p_sys->i_tracks; i++ )
     {
-        p_trak = MP4_BoxGet( p_sys->p_root, "/moov/trak[%d]", i );
+        MP4_Box_t *p_trak = MP4_BoxGet( p_sys->p_root, "/moov/trak[%u]", i );
         MP4_TrackSetup( p_demux, &p_sys->track[i], p_trak, true, !b_enabled_es );
 
         if( p_sys->track[i].b_ok && !p_sys->track[i].b_chapters_source )
@@ -2625,6 +2626,11 @@ static int TrackCreateSamplesIndex( demux_t *p_demux,
 
         msg_Warn( p_demux, "CTTS table of %"PRIu32" entries", ctts->i_entry_count );
 
+        int64_t i_cts_shift = 0;
+        const MP4_Box_t *p_cslg = MP4_BoxGet( p_demux_track->p_stbl, "cslg" );
+        if( p_cslg && BOXDATA(p_cslg) )
+            i_cts_shift = BOXDATA(p_cslg)->ct_to_dts_shift;
+
         /* Create pts-dts table per chunk */
         uint32_t i_index = 0;
         uint32_t i_current_index_samples_left = 0;
@@ -2667,7 +2673,7 @@ static int TrackCreateSamplesIndex( demux_t *p_demux,
                     if ( i_current_index_samples_left > i_sample_count )
                     {
                         ck->p_sample_count_pts[i] = i_sample_count;
-                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index];
+                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index] + i_cts_shift;
                         i_current_index_samples_left -= i_sample_count;
                         i_sample_count = 0;
                         assert( i == ck->i_entries_pts - 1 );
@@ -2676,7 +2682,7 @@ static int TrackCreateSamplesIndex( demux_t *p_demux,
                     else
                     {
                         ck->p_sample_count_pts[i] = i_current_index_samples_left;
-                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index];
+                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index] + i_cts_shift;
                         i_sample_count -= i_current_index_samples_left;
                         i_current_index_samples_left = 0;
                         i_index++;
@@ -2687,7 +2693,7 @@ static int TrackCreateSamplesIndex( demux_t *p_demux,
                     if ( ctts->pi_sample_count[i_index] > i_sample_count )
                     {
                         ck->p_sample_count_pts[i] = i_sample_count;
-                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index];
+                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index] + i_cts_shift;
                         i_current_index_samples_left = ctts->pi_sample_count[i_index] - i_sample_count;
                         i_sample_count = 0;
                         assert( i == ck->i_entries_pts - 1 );
@@ -2696,7 +2702,7 @@ static int TrackCreateSamplesIndex( demux_t *p_demux,
                     else
                     {
                         ck->p_sample_count_pts[i] = ctts->pi_sample_count[i_index];
-                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index];
+                        ck->p_sample_offset_pts[i] = ctts->pi_sample_offset[i_index] + i_cts_shift;
                         i_sample_count -= ctts->pi_sample_count[i_index];
                         i_index++;
                     }

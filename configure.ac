@@ -597,8 +597,8 @@ dnl Check for system libs needed
 need_libc=false
 
 dnl Check for usual libc functions
-AC_CHECK_FUNCS([daemon fcntl flock fstatvfs fork getenv getpwuid_r isatty lstat memalign mkostemp mmap open_memstream openat pread posix_fadvise posix_madvise setlocale stricmp strnicmp strptime tdestroy uselocale])
-AC_REPLACE_FUNCS([atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv memrchr nrand48 poll posix_memalign recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tfind timegm timespec_get strverscmp pathconf])
+AC_CHECK_FUNCS([daemon fcntl flock fstatvfs fork getenv getpwuid_r isatty lstat memalign mkostemp mmap open_memstream openat pread posix_fadvise posix_madvise posix_memalign setlocale stricmp strnicmp strptime tdestroy uselocale])
+AC_REPLACE_FUNCS([aligned_alloc atof atoll dirfd fdopendir ffsll flockfile fsync getdelim getpid lldiv memrchr nrand48 poll recvmsg rewind sendmsg setenv strcasecmp strcasestr strdup strlcpy strndup strnlen strnstr strsep strtof strtok_r strtoll swab tfind timegm timespec_get strverscmp pathconf])
 AC_REPLACE_FUNCS([gettimeofday])
 AC_CHECK_FUNC(fdatasync,,
   [AC_DEFINE(fdatasync, fsync, [Alias fdatasync() to fsync() if missing.])
@@ -756,6 +756,17 @@ AC_CHECK_LIB(m,sincos, [
 ], [
   AC_LIBOBJ([sincos])
 ])
+
+AC_MSG_CHECKING([_Thread_local support])
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([_Thread_local int foo = 0;
+                   int main() {}])], [
+    AC_MSG_RESULT([ok])
+    AC_DEFINE(HAVE_THREAD_LOCAL, 1, [Defined to 1 if C11 _Thread_local storage qualifier is supported])
+],[ AC_MSG_RESULT([no])])
+
+dnl __STDC_NO_THREADS__ can't be trusted on some platforms.
+dnl check for its availability explicitely
+AC_CHECK_HEADERS([threads.h])
 
 dnl Check for dynamic plugins
 LIBDL=""
@@ -931,7 +942,7 @@ dnl
 dnl  Compiler warnings
 dnl
 
-RDC_PROG_CC_WFLAGS([all extra sign-compare undef pointer-arith bad-function-cast write-strings missing-prototypes volatile-register-var error-implicit-function-declaration init-self logical-op format-security])
+RDC_PROG_CC_WFLAGS([all extra sign-compare undef pointer-arith bad-function-cast write-strings missing-prototypes volatile-register-var error-implicit-function-declaration init-self logical-op format-security shadow=local])
 RDC_PROG_CC_FLAGS([-pipe])
 AC_LANG_PUSH([C++])
 RDC_PROG_CXX_WFLAGS([all extra sign-compare undef pointer-arith volatile-register-var format-security])
@@ -2328,6 +2339,7 @@ AS_IF([test "${enable_libva}" = "yes" -a "${have_avcodec}" != "yes" ], [
 have_vaapi="no"
 have_vaapi_drm="no"
 have_vaapi_x11="no"
+have_vaapi_wl="no"
 AS_IF([test "${enable_libva}" != "no"], [
   PKG_CHECK_MODULES([LIBVA], [libva >= 0.38], [
     have_vaapi="yes"
@@ -2348,9 +2360,16 @@ AS_IF([test "${enable_libva}" != "no"], [
   ], [
     AC_MSG_WARN([${LIBVA_X11_PKG_ERRORS}.])
   ])
+  PKG_CHECK_MODULES(LIBVA_WL, [libva-wayland], [
+    have_vaapi_wl="yes"
+  ], [
+    AC_MSG_WARN([${LIBVA_WL_PKG_ERRORS}.])
+  ])
 ])
+AM_CONDITIONAL([HAVE_VAAPI], [test "${have_vaapi}" = "yes"])
 AM_CONDITIONAL([HAVE_VAAPI_DRM], [test "${have_vaapi_drm}" = "yes"])
 AM_CONDITIONAL([HAVE_VAAPI_X11], [test "${have_vaapi_x11}" = "yes"])
+AM_CONDITIONAL([HAVE_VAAPI_WL], [test "${have_vaapi_wl}" = "yes"])
 
 have_avcodec_vaapi="no"
 AS_IF([test "${have_vaapi}" = "yes" -a "${have_avcodec}" = "yes"], [
@@ -3266,20 +3285,26 @@ AS_IF([test "${enable_directx}" != "no"], [
 
   dnl Direct3D11
   AC_CHECK_HEADERS(d3d11.h, [
-    VLC_ADD_PLUGIN([direct3d11 direct3d11_deinterlace])
+    VLC_ADD_PLUGIN([direct3d11 direct3d11_deinterlace direct3d11_adjust])
   ])
 
   dnl Direct3D9
   AC_CHECK_HEADERS(d3d9.h, [
     VLC_ADD_PLUGIN([direct3d9])
+    AC_CHECK_HEADERS(d3dx9effect.h)
 
-    AC_CHECK_FUNCS([IDirectXVideoProcessorService_GetVideoProcessorDeviceGuids],
-      [
-        VLC_ADD_PLUGIN([dxva2_deinterlace])
+    AC_PREPROC_IFELSE([AC_LANG_PROGRAM(
+        [[#define COBJMACROS
+          #include <d3d9.h>
+          #include <dxva2api.h>
+          #ifndef IDirectXVideoProcessorService_GetVideoProcessorDeviceGuids
+          # error dxva2 too old
+          #endif
+        ]],[[;]])
+      ],[
+        VLC_ADD_PLUGIN([direct3d9_deinterlace direct3d9_adjust])
       ],
-      [AC_MSG_WARN([Could not find required IDirectXVideoDecoder in dxva2api.h])],
-      [#include <d3d9.h>
-       #include <dxva2api.h>])
+      [AC_MSG_WARN([Could not find required IDirectXVideoDecoder in dxva2api.h])])
 
   ])
 ])
@@ -3884,7 +3909,7 @@ dnl
 dnl  VideoToolbox plugins
 AC_CHECK_HEADERS(VideoToolbox/VideoToolbox.h, [
     VLC_ADD_PLUGIN([videotoolbox])
-    VLC_ADD_PLUGIN([cvpx_i420])
+    VLC_ADD_PLUGIN([cvpx])
   ])
 
 dnl

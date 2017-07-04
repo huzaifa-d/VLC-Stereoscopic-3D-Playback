@@ -278,9 +278,10 @@ static void DarkenFieldMMX( picture_t *p_dst,
 
 /* See header for function doc. */
 int RenderPhosphor( filter_t *p_filter,
-                    picture_t *p_dst,
+                    picture_t *p_dst, picture_t *p_pic,
                     int i_order, int i_field )
 {
+    VLC_UNUSED(p_pic);
     assert( p_filter != NULL );
     assert( p_dst != NULL );
     assert( i_order >= 0 && i_order <= 2 ); /* 2 = soft field repeat */
@@ -289,8 +290,8 @@ int RenderPhosphor( filter_t *p_filter,
     filter_sys_t *p_sys = p_filter->p_sys;
 
     /* Last two input frames */
-    picture_t *p_in  = p_sys->pp_history[HISTORY_SIZE-1];
-    picture_t *p_old = p_sys->pp_history[HISTORY_SIZE-2];
+    picture_t *p_in  = p_sys->context.pp_history[HISTORY_SIZE-1];
+    picture_t *p_old = p_sys->context.pp_history[HISTORY_SIZE-2];
 
     /* Use the same input picture as "old" at the first frame after startup */
     if( !p_old )

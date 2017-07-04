@@ -38,6 +38,15 @@
 #define EPG_LEFT 0.1
 #define EPG_NAME_SIZE 0.05
 #define EPG_PROGRAM_SIZE 0.03
+#define EPG_TIME_SIZE 0.03
+
+#define RGB2YUV( R, G, B ) \
+    ((0.257 * R) + (0.504 * G) + (0.098 * B) + 16), \
+    (-(0.148 * R) - (0.291 * G) + (0.439 * B) + 128),\
+    ((0.439 * R) - (0.368 * G) - (0.071 * B) + 128)
+
+#define HEX2YUV( rgb ) \
+    RGB2YUV( (rgb >> 16), ((rgb & 0xFF00) >> 8), (rgb & 0xFF) )
 
 static subpicture_region_t * vout_OSDEpgSlider(int x, int y,
                                                int width, int height,
@@ -47,10 +56,10 @@ static subpicture_region_t * vout_OSDEpgSlider(int x, int y,
     video_palette_t palette = {
         .i_entries = 4,
         .palette = {
-            [0] = { 0xff, 0x80, 0x80, 0x00 },
-            [1] = { 0x00, 0x80, 0x80, 0x00 },
-            [2] = { 0xff, 0x80, 0x80, 0xff },
-            [3] = { 0x00, 0x80, 0x80, 0xff },
+            [0] = { HEX2YUV(0xffffff), 0x00 }, /* Bar fill remain/background */
+            [1] = { HEX2YUV(0x000000), 0x00 },
+            [2] = { HEX2YUV(0xffffff), 0xff }, /* Bar fill */
+            [3] = { HEX2YUV(0x000000), 0xff }, /* Bar outline */
         },
     };
 
@@ -92,15 +101,35 @@ static subpicture_region_t * vout_OSDEpgSlider(int x, int y,
     return region;
 }
 
+static text_segment_t * vout_OSDSegment(const char *psz_text, int size, uint32_t color)
+{
+    text_segment_t *p_segment = text_segment_New(psz_text);
+    if(unlikely(!p_segment))
+        return NULL;
 
-static subpicture_region_t * vout_OSDEpgText(const char *text,
-                                             int x, int y,
-                                             int size, uint32_t color)
+    /* Set text style */
+    p_segment->style = text_style_Create(STYLE_NO_DEFAULTS);
+    if (unlikely(!p_segment->style))
+    {
+        text_segment_Delete(p_segment);
+        return NULL;
+    }
+
+    p_segment->style->i_font_size  = __MAX(size ,1 );
+    p_segment->style->i_font_color = color;
+    p_segment->style->i_font_alpha = STYLE_ALPHA_OPAQUE;
+    p_segment->style->i_features |= STYLE_HAS_FONT_ALPHA | STYLE_HAS_FONT_COLOR;
+
+    return p_segment;
+}
+
+static subpicture_region_t * vout_OSDTextRegion(text_segment_t *p_segment,
+                                                int x, int y )
 {
     video_format_t fmt;
     subpicture_region_t *region;
 
-    if (!text)
+    if (!p_segment)
         return NULL;
 
     /* Create a new subpicture region */
@@ -112,36 +141,30 @@ static subpicture_region_t * vout_OSDEpgText(const char *text,
     if (!region)
         return NULL;
 
-    /* Set subpicture parameters */
-    region->p_text   = text_segment_New(text);
-    if ( unlikely( !region->p_text ) )
-    {
-        subpicture_region_Delete( region );
-        return NULL;
-    }
-    region->i_align  = 0;
+    region->p_text   = p_segment;
+    region->i_align  = SUBPICTURE_ALIGN_LEFT | SUBPICTURE_ALIGN_TOP;
     region->i_x      = x;
     region->i_y      = y;
-
-    /* Set text style */
-    text_style_t *p_style = text_style_Create( STYLE_NO_DEFAULTS );
-    if ( unlikely( !p_style ) )
-    {
-        text_segment_Delete( region->p_text );
-        subpicture_region_Delete( region );
-        return NULL;
-    }
-    region->p_text->style = p_style;
-    if (p_style) {
-        p_style->i_font_size  = __MAX(size ,1 );
-        p_style->i_font_color = color;
-        p_style->i_font_alpha = STYLE_ALPHA_OPAQUE;
-        p_style->i_features |= STYLE_HAS_FONT_ALPHA | STYLE_HAS_FONT_COLOR;
-    }
 
     return region;
 }
 
+static subpicture_region_t * vout_OSDEpgText(const char *text,
+                                             int x, int y,
+                                             int size, uint32_t color)
+{
+    return vout_OSDTextRegion(vout_OSDSegment(text, size, color), x, y);
+}
+
+static char * vout_OSDPrintTime(time_t t)
+{
+    char *psz;
+    struct tm tms;
+    localtime_r(&t, &tms);
+    if(asprintf(&psz, "%2.2d:%2.2d", tms.tm_hour, tms.tm_min) < 0)
+       psz = NULL;
+    return psz;
+}
 
 static subpicture_region_t * vout_BuildOSDEpg(vlc_epg_t *epg,
                                               int64_t epgtime,
@@ -193,35 +216,31 @@ static subpicture_region_t * vout_BuildOSDEpg(vlc_epg_t *epg,
         return head;
 
     /* Format the hours of the beginning and the end of the current program. */
-    struct tm tm_start, tm_end;
-    time_t t_start = epg->p_current->i_start;
-    time_t t_end = epg->p_current->i_start + epg->p_current->i_duration;
-    localtime_r(&t_start, &tm_start);
-    localtime_r(&t_end, &tm_end);
-    char text_start[128];
-    char text_end[128];
-    snprintf(text_start, sizeof(text_start), "%2.2d:%2.2d",
-             tm_start.tm_hour, tm_start.tm_min);
-    snprintf(text_end, sizeof(text_end), "%2.2d:%2.2d",
-             tm_end.tm_hour, tm_end.tm_min);
+    char *psz_start = vout_OSDPrintTime(epg->p_current->i_start);
+    char *psz_end = vout_OSDPrintTime(epg->p_current->i_start +
+                                      epg->p_current->i_duration);
 
     /* Display those hours. */
     last_ptr = &(*last_ptr)->p_next;
-    *last_ptr = vout_OSDEpgText(text_start,
+    *last_ptr = vout_OSDEpgText(psz_start,
                                 x + visible_width  * (EPG_LEFT + 0.02),
                                 y + visible_height * (EPG_TOP + 0.15),
-                                visible_height * EPG_PROGRAM_SIZE,
+                                visible_height * EPG_TIME_SIZE,
                                 0x00ffffff);
 
     if (!*last_ptr)
-        return head;
+        goto end;
 
     last_ptr = &(*last_ptr)->p_next;
-    *last_ptr = vout_OSDEpgText(text_end,
+    *last_ptr = vout_OSDEpgText(psz_end,
                                 x + visible_width  * (1 - EPG_LEFT - 0.085),
                                 y + visible_height * (EPG_TOP + 0.15),
-                                visible_height * EPG_PROGRAM_SIZE,
+                                visible_height * EPG_TIME_SIZE,
                                 0x00ffffff);
+
+end:
+    free(psz_start);
+    free(psz_end);
 
     return head;
 }
@@ -259,8 +278,9 @@ static void OSDEpgUpdate(subpicture_t *subpic,
     fmt.i_visible_width = fmt.i_visible_width * fmt.i_sar_num / fmt.i_sar_den;
     fmt.i_x_offset      = fmt.i_x_offset      * fmt.i_sar_num / fmt.i_sar_den;
 
-    subpic->i_original_picture_width  = fmt.i_width;
-    subpic->i_original_picture_height = fmt.i_height;
+    subpic->i_original_picture_width  = fmt.i_visible_width;
+    subpic->i_original_picture_height = fmt.i_visible_height;
+
     subpic->p_region = vout_BuildOSDEpg(sys->epg,
                                         sys->time,
                                         fmt.i_x_offset,
@@ -305,16 +325,41 @@ int vout_OSDEpg(vout_thread_t *vout, input_item_t *input)
                 if(p_event)
                 {
                     if(!vlc_epg_AddEvent(epg, p_event))
-                    {
-                        vlc_epg_Delete(epg);
                         vlc_epg_event_Delete(p_event);
-                        epg = NULL;
-                    }
-                    else vlc_epg_SetCurrent(epg, p_event->i_start);
+                    else
+                        vlc_epg_SetCurrent(epg, p_event->i_start);
                 }
             }
-            if(epg && tmp->psz_name)
+
+            /* Add next event if any */
+            vlc_epg_event_t *p_next = NULL;
+            for(size_t i=0; i<tmp->i_event; i++)
+            {
+                vlc_epg_event_t *p_evt = tmp->pp_event[i];
+                if((!p_next || p_next->i_start > p_evt->i_start) &&
+                   (!p_current_event || (p_evt->i_id != p_current_event->i_id &&
+                                         p_evt->i_start >= p_current_event->i_start +
+                                                           p_current_event->i_duration )))
+                {
+                    p_next = tmp->pp_event[i];
+                }
+            }
+            if( p_next )
+            {
+                vlc_epg_event_t *p_event = vlc_epg_event_Duplicate(p_next);
+                if(!vlc_epg_AddEvent(epg, p_event))
+                    vlc_epg_event_Delete(p_event);
+            }
+
+            if(epg->i_event > 0)
+            {
                 epg->psz_name = strdup(tmp->psz_name);
+            }
+            else
+            {
+                vlc_epg_Delete(epg);
+                epg = NULL;
+            }
         }
     }
     epg_time = input->i_epg_time;
@@ -349,7 +394,7 @@ int vout_OSDEpg(vout_thread_t *vout, input_item_t *input)
         return VLC_EGENERIC;
     }
 
-    subpic->i_channel  = SPU_DEFAULT_CHANNEL;
+    subpic->i_channel  = VOUT_SPU_CHANNEL_OSD;
     subpic->i_start    = now;
     subpic->i_stop     = now + 3000 * INT64_C(1000);
     subpic->b_ephemer  = true;

@@ -35,6 +35,7 @@
 
 #include "item.h"
 #include "info.h"
+#include "input_internal.h"
 
 struct input_item_opaque
 {
@@ -224,17 +225,6 @@ void input_item_CopyOptions( input_item_t *p_child,
 
     free( flagv );
     free( optv );
-}
-
-/* This won't hold the item, but can tell to interested third parties
- * Like the playlist, that there is a new sub item. With this design
- * It is not the input item's responsibility to keep all the ref of
- * the input item children. */
-void input_item_PostSubItem( input_item_t *p_parent, input_item_t *p_child )
-{
-    input_item_node_t *p_node = input_item_node_Create( p_parent );
-    input_item_node_AppendItem( p_node, p_child );
-    input_item_node_PostAndDelete( p_node );
 }
 
 bool input_item_HasErrorWhenReading( input_item_t *p_item )

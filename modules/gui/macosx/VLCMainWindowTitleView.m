@@ -89,7 +89,7 @@
 {
     b_nativeFullscreenMode = var_InheritBool(getIntf(), "macosx-nativefullscreenmode");
 
-    if (!b_nativeFullscreenMode || OSX_YOSEMITE || OSX_EL_CAPITAN || OSX_SIERRA) {
+    if (!b_nativeFullscreenMode || OSX_YOSEMITE_AND_HIGHER) {
         [_fullscreenButton setHidden: YES];
     }
 
@@ -123,9 +123,9 @@
 - (NSImage *)getButtonImage:(NSString *)o_id
 {
     NSString *o_name = @"";
-    if (OSX_YOSEMITE || OSX_EL_CAPITAN) {
+    if (OSX_YOSEMITE_AND_HIGHER) {
         o_name = @"yosemite-";
-    } else { // OSX_LION, OSX_MOUNTAIN_LION, OSX_MAVERICKS
+    } else { // OSX_LION_AND_HIGHER, OSX_MOUNTAIN_LION_AND_HIGHER, OSX_MAVERICKS_AND_HIGHER
         o_name = @"lion-";
     }
 
@@ -151,7 +151,7 @@
     _greenOnClickImage = [self getButtonImage:@"window-zoom-on"];
 
     // these files are only available in the yosemite variant
-    if (OSX_YOSEMITE || OSX_EL_CAPITAN) {
+    if (OSX_YOSEMITE_AND_HIGHER) {
         _fullscreenImage = [self getButtonImage:@"window-fullscreen"];
         _fullscreenHoverImage = [self getButtonImage:@"window-fullscreen-over"];
         _fullscreenOnClickImage = [self getButtonImage:@"window-fullscreen-on"];
@@ -186,7 +186,7 @@
 {
     // default image for old version, or if native fullscreen is
     // disabled on yosemite, or if alt key is pressed
-    if (!(OSX_YOSEMITE || OSX_EL_CAPITAN) || !b_nativeFullscreenMode || b_alt_pressed) {
+    if (!OSX_YOSEMITE_AND_HIGHER || !b_nativeFullscreenMode || b_alt_pressed) {
 
         if (b_mouse_over) {
             [_greenButton setImage: _greenHoverImage];
@@ -219,7 +219,7 @@
     else if (sender == _yellowButton)
         [[self window] miniaturize: sender];
     else if (sender == _greenButton) {
-        if ((OSX_YOSEMITE || OSX_EL_CAPITAN) && b_nativeFullscreenMode && !b_alt_pressed) {
+        if (OSX_YOSEMITE_AND_HIGHER && b_nativeFullscreenMode && !b_alt_pressed) {
             [[self window] toggleFullScreen:self];
         } else {
             [[self window] performZoom: sender];
@@ -363,64 +363,6 @@
 
 @end
 
-
-/*****************************************************************************
- * VLCResizeControl
- *
- * For Leopard and Snow Leopard, we need to emulate the resize control on the
- * bottom right of the window, since it is gone by using the borderless window
- * mask. A proper fix would be Lion-only.
- *****************************************************************************/
-
-@implementation VLCResizeControl
-
-- (void)mouseDown:(NSEvent *)theEvent {
-    BOOL keepOn = YES;
-
-    while (keepOn) {
-        theEvent = [[self window] nextEventMatchingMask: NSLeftMouseUpMask |
-                    NSLeftMouseDraggedMask];
-
-        switch ([theEvent type]) {
-            case NSLeftMouseDragged:
-            {
-                NSRect windowFrame = [[self window] frame];
-                CGFloat deltaX, deltaY, oldOriginY;
-                deltaX = [theEvent deltaX];
-                deltaY = [theEvent deltaY];
-                oldOriginY = windowFrame.origin.y;
-
-                windowFrame.origin.y = (oldOriginY + windowFrame.size.height) - (windowFrame.size.height + deltaY);
-                windowFrame.size.width += deltaX;
-                windowFrame.size.height += deltaY;
-
-                NSSize winMinSize = [self window].minSize;
-                if (windowFrame.size.width < winMinSize.width)
-                    windowFrame.size.width = winMinSize.width;
-
-                if (windowFrame.size.height < winMinSize.height) {
-                    windowFrame.size.height = winMinSize.height;
-                    windowFrame.origin.y = oldOriginY;
-                }
-
-                [[self window] setFrame: windowFrame display: YES animate: NO];
-                break;
-            }
-                break;
-            case NSLeftMouseUp:
-                keepOn = NO;
-                break;
-            default:
-                /* Ignore any other kind of event. */
-                break;
-        }
-
-    };
-
-    return;
-}
-
-@end
 
 /*****************************************************************************
  * VLCColorView

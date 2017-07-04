@@ -62,7 +62,7 @@ static int AllocatePicture( picture_t *p_pic )
         i_bytes += p->i_pitch * p->i_lines;
     }
 
-    uint8_t *p_data = vlc_memalign( 16, i_bytes );
+    uint8_t *p_data = aligned_alloc( 16, i_bytes );
     if( i_bytes > 0 && p_data == NULL )
     {
         p_pic->i_planes = 0;
@@ -86,11 +86,10 @@ static int AllocatePicture( picture_t *p_pic )
 
 static void PictureDestroyContext( picture_t *p_picture )
 {
-    void (**context)( void * ) = p_picture->context;
-    if( context != NULL )
+    picture_context_t *ctx = p_picture->context;
+    if (ctx != NULL)
     {
-        void (*context_destroy)( void * ) = *context;
-        context_destroy( context );
+        ctx->destroy(ctx);
         p_picture->context = NULL;
     }
 }
@@ -111,7 +110,7 @@ static void picture_DestroyFromResource( picture_t *p_picture )
  */
 static void picture_Destroy( picture_t *p_picture )
 {
-    vlc_free( p_picture->p[0].p_pixels );
+    aligned_free( p_picture->p[0].p_pixels );
     free( p_picture );
 }
 
@@ -369,6 +368,11 @@ void picture_CopyPixels( picture_t *p_dst, const picture_t *p_src )
 {
     for( int i = 0; i < p_src->i_planes ; i++ )
         plane_CopyPixels( p_dst->p+i, p_src->p+i );
+
+    assert( p_dst->context == NULL );
+
+    if( p_src->context != NULL )
+        p_dst->context = p_src->context->copy( p_src->context );
 }
 
 void picture_Copy( picture_t *p_dst, const picture_t *p_src )

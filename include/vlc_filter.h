@@ -77,6 +77,8 @@ struct filter_t
     es_format_t         fmt_out;
     bool                b_allow_fmt_out_change;
 
+    /* Name of the "video filter" shortcut that is requested, can be NULL */
+    const char *        psz_name;
     /* Filter configuration */
     config_chain_t *    p_cfg;
 
@@ -211,6 +213,29 @@ static inline int filter_GetInputAttachments( filter_t *p_filter,
     return p_filter->pf_get_attachments( p_filter,
                                          ppp_attachment, pi_attachment );
 }
+
+/**
+ * This function duplicates every variables from the filter, and adds a proxy
+ * callback to trigger filter events from obj.
+ *
+ * \param restart_cb a vlc_callback_t to call if the event means restarting the
+ * filter (i.e. an event on a non-command variable)
+ */
+VLC_API void filter_AddProxyCallbacks( vlc_object_t *obj, filter_t *filter,
+                                       vlc_callback_t restart_cb );
+# define filter_AddProxyCallbacks(a, b, c) \
+    filter_AddProxyCallbacks(VLC_OBJECT(a), b, c)
+
+/**
+ * This function removes the callbacks previously added to every duplicated
+ * variables, and removes them afterward.
+ *
+ * \param restart_cb the same vlc_callback_t passed to filter_AddProxyCallbacks
+ */
+VLC_API void filter_DelProxyCallbacks( vlc_object_t *obj, filter_t *filter,
+                                       vlc_callback_t restart_cb);
+# define filter_DelProxyCallbacks(a, b, c) \
+    filter_DelProxyCallbacks(VLC_OBJECT(a), b, c)
 
 /**
  * It creates a blend filter.

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * VLCAudioEffectsWindowController.m: MacOS X interface module
  *****************************************************************************
- * Copyright (C) 2004-2015 VLC authors and VideoLAN
+ * Copyright (C) 2004-2017 VLC authors and VideoLAN
  * $Id$
  *
  * Authors: Felix Paul Kühne <fkuehne -at- videolan -dot- org>
@@ -105,7 +105,10 @@
     /* Equalizer */
     [_equalizerEnableCheckbox setTitle:_NS("Enable")];
     [_equalizerTwoPassCheckbox setTitle:_NS("2 Pass")];
+    [_equalizerTwoPassCheckbox setToolTip:_NS("Filter the audio twice. This provides a more "  \
+                                              "intense effect.")];
     [_equalizerPreampLabel setStringValue:_NS("Preamp")];
+    [_equalizerPreampLabel setToolTip:_NS("Set the global gain in dB (-20 ... 20).")];
 
     /* Compressor */
     [_compressorEnableCheckbox setTitle:_NS("Enable dynamic range compressor")];
@@ -118,21 +121,42 @@
     [_compressorBand6Label setStringValue:_NS("Knee radius")];
     [_compressorBand7Label setStringValue:_NS("Makeup gain")];
 
-
     /* Spatializer */
     [_spatializerEnableCheckbox setTitle:_NS("Enable Spatializer")];
     [_spatializerResetButton setTitle:_NS("Reset")];
     [_spatializerBand1Label setStringValue:_NS("Size")];
+    [_spatializerBand1Label setToolTip:_NS("Defines the virtual surface of the room" \
+                                           " emulated by the filter.")];
     [_spatializerBand2Label setStringValue:_NS("Width")];
+    [_spatializerBand2Label setToolTip:_NS("Width of the virtual room")];
     [_spatializerBand3Label setStringValue:_NS("Wet")];
     [_spatializerBand4Label setStringValue:_NS("Dry")];
     [_spatializerBand5Label setStringValue:_NS("Damp")];
 
     /* Filter */
     [_filterHeadPhoneCheckbox setTitle:_NS("Headphone virtualization")];
+    [_filterHeadPhoneCheckbox setToolTip:_NS("This effect gives you the feeling that you are standing in a room " \
+                                             "with a complete 7.1 speaker set when using only a headphone, " \
+                                             "providing a more realistic sound experience. It should also be " \
+                                             "more comfortable and less tiring when listening to music for " \
+                                             "long periods of time.\nIt works with any source format from mono " \
+                                             "to 7.1.")];
     [_filterNormLevelCheckbox setTitle:_NS("Volume normalization")];
+    [_filterNormLevelCheckbox setToolTip:_NS("Volume normalizer")];
+    [_filterNormLevelLabel setToolTip:_NS("If the average power over the last N buffers " \
+                                          "is higher than this value, the volume will be normalized. " \
+                                          "This value is a positive floating point number. A value " \
+                                          "between 0.5 and 10 seems sensible.")];
     [_filterNormLevelLabel setStringValue:_NS("Maximum level")];
     [_filterKaraokeCheckbox setTitle:_NS("Karaoke")];
+    [_filterKaraokeCheckbox setToolTip:_NS("Simple Karaoke filter")];
+    [_filterScaleTempoCheckbox setTitle:_NS("Scaletempo")];
+    [_filterScaleTempoCheckbox setToolTip:_NS("Audio tempo scaler synched with rate")];
+    [_filterStereoEnhancerCheckbox setTitle:_NS("Stereo Enhancer")];
+    [_filterStereoEnhancerCheckbox setToolTip:_NS("This filter enhances the stereo effect by "\
+                                                  "suppressing mono (signal common to both channels) "\
+                                                  "and by delaying the signal of left into right and vice versa, "\
+                                                  "thereby widening the stereo effect.")];
 
     /* generic */
     [[_tabView tabViewItemAtIndex:[_tabView indexOfTabViewItemWithIdentifier:@"equalizer"]] setLabel:_NS("Equalizer")];
@@ -944,11 +968,15 @@ static bool GetEqualizerStatus(intf_thread_t *p_custom_intf,
     if (psz_afilters) {
         [_filterHeadPhoneCheckbox setState: (NSInteger)strstr(psz_afilters, "headphone") ];
         [_filterKaraokeCheckbox setState: (NSInteger)strstr(psz_afilters, "karaoke") ];
+        [_filterScaleTempoCheckbox setState: (NSInteger)strstr(psz_afilters, "scaletempo") ];
+        [_filterStereoEnhancerCheckbox setState: (NSInteger)strstr(psz_afilters, "stereo_widen") ];
         bEnable_normvol = strstr(psz_afilters, "normvol") != NULL;
         free(psz_afilters);
     } else {
         [_filterHeadPhoneCheckbox setState: NSOffState];
         [_filterKaraokeCheckbox setState: NSOffState];
+        [_filterScaleTempoCheckbox setState: NSOffState];
+        [_filterStereoEnhancerCheckbox setState: NSOffState];
     }
 
     [_filterNormLevelSlider setEnabled:bEnable_normvol];
@@ -960,14 +988,14 @@ static bool GetEqualizerStatus(intf_thread_t *p_custom_intf,
 
 - (IBAction)filterEnableHeadPhoneVirt:(id)sender
 {
-    [self setAudioFilter: "headphone" on:[sender state]];
+    [self setAudioFilter:"headphone" on:[sender state]];
 }
 
 - (IBAction)filterEnableVolumeNorm:(id)sender
 {
     [_filterNormLevelSlider setEnabled:[sender state]];
     [_filterNormLevelLabel setEnabled:[sender state]];
-    [self setAudioFilter: "normvol" on:[sender state]];
+    [self setAudioFilter:"normvol" on:[sender state]];
 }
 
 - (IBAction)filterVolumeNormSliderUpdated:(id)sender
@@ -984,7 +1012,17 @@ static bool GetEqualizerStatus(intf_thread_t *p_custom_intf,
 
 - (IBAction)filterEnableKaraoke:(id)sender
 {
-    [self setAudioFilter: "karaoke" on:[sender state]];
+    [self setAudioFilter:"karaoke" on:[sender state]];
+}
+
+- (IBAction)filterEnableScaleTempo:(id)sender
+{
+    [self setAudioFilter:"scaletempo" on:[sender state]];
+}
+
+- (IBAction)filterEnableStereoEnhancer:(id)sender
+{
+    [self setAudioFilter:"stereo_widen" on:[sender state]];
 }
 
 @end

@@ -36,6 +36,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef HAVE_SEARCH_H
+# include <search.h>
+#endif
 
 #include <vlc_common.h>
 #include <vlc_plugin.h>
@@ -46,20 +49,110 @@
 #include "config/configuration.h"
 #include "modules/modules.h"
 
+typedef struct vlc_modcap
+{
+    char *name;
+    module_t **modv;
+    size_t modc;
+} vlc_modcap_t;
+
+static int vlc_modcap_cmp(const void *a, const void *b)
+{
+    const vlc_modcap_t *capa = a, *capb = b;
+    return strcmp(capa->name, capb->name);
+}
+
+static void vlc_modcap_free(void *data)
+{
+    vlc_modcap_t *cap = data;
+
+    free(cap->modv);
+    free(cap->name);
+    free(cap);
+}
+
+static int vlc_module_cmp (const void *a, const void *b)
+{
+    const module_t *const *ma = a, *const *mb = b;
+    /* Note that qsort() uses _ascending_ order,
+     * so the smallest module is the one with the biggest score. */
+    return (*mb)->i_score - (*ma)->i_score;
+}
+
+static void vlc_modcap_sort(const void *node, const VISIT which,
+                            const int depth)
+{
+    vlc_modcap_t *const *cp = node, *cap = *cp;
+
+    if (which != postorder && which != leaf)
+        return;
+
+    qsort(cap->modv, cap->modc, sizeof (*cap->modv), vlc_module_cmp);
+    (void) depth;
+}
+
 static struct
 {
     vlc_mutex_t lock;
     block_t *caches;
+    void *caps_tree;
     unsigned usage;
-} modules = { VLC_STATIC_MUTEX, NULL, 0 };
+} modules = { VLC_STATIC_MUTEX, NULL, NULL, 0 };
 
 vlc_plugin_t *vlc_plugins = NULL;
 
-static void module_StoreBank(vlc_plugin_t *lib)
+/**
+ * Adds a module to the bank
+ */
+static int vlc_module_store(module_t *mod)
+{
+    const char *name = module_get_capability(mod);
+    vlc_modcap_t *cap = malloc(sizeof (*cap));
+    if (unlikely(cap == NULL))
+        return -1;
+
+    cap->name = strdup(name);
+    cap->modv = NULL;
+    cap->modc = 0;
+
+    if (unlikely(cap->name == NULL))
+        goto error;
+
+    vlc_modcap_t **cp = tsearch(cap, &modules.caps_tree, vlc_modcap_cmp);
+    if (unlikely(cp == NULL))
+        goto error;
+
+    if (*cp != cap)
+    {
+        vlc_modcap_free(cap);
+        cap = *cp;
+    }
+
+    module_t **modv = realloc(cap->modv, sizeof (*modv) * (cap->modc + 1));
+    if (unlikely(modv == NULL))
+        return -1;
+
+    cap->modv = modv;
+    cap->modv[cap->modc] = mod;
+    cap->modc++;
+    return 0;
+error:
+    vlc_modcap_free(cap);
+    return -1;
+}
+
+/**
+ * Adds a plugin (and all its modules) to the bank
+ */
+static void vlc_plugin_store(vlc_plugin_t *lib)
 {
     /*vlc_assert_locked (&modules.lock);*/
+
     lib->next = vlc_plugins;
     vlc_plugins = lib;
+
+    for (module_t *m = lib->module; m != NULL; m = m->next)
+        vlc_module_store(m);
 }
 
 /**
@@ -96,7 +189,7 @@ static void module_InitStaticModules(void)
     {
         vlc_plugin_t *lib = module_InitStatic(vlc_static_modules[i]);
         if (likely(lib != NULL))
-            module_StoreBank(lib);
+            vlc_plugin_store(lib);
     }
 }
 #else
@@ -207,7 +300,7 @@ static int AllocatePluginFile (module_bank_t *bank, const char *abspath,
     if (plugin == NULL)
         return -1;
 
-    module_StoreBank(plugin);
+    vlc_plugin_store(plugin);
 
     if (bank->mode & CACHE_WRITE_FILE) /* Add entry to to-be-saved cache */
     {
@@ -334,7 +427,7 @@ static void AllocatePluginPath(vlc_object_t *obj, const char *path,
         if (mode & CACHE_SCAN_DIR)
             vlc_plugin_destroy(plugin);
         else
-            module_StoreBank(plugin);
+            vlc_plugin_store(plugin);
     }
 
     if (mode & CACHE_WRITE_FILE)
@@ -495,7 +588,7 @@ void module_InitBank (void)
          * as for every other module. */
         vlc_plugin_t *plugin = module_InitStatic(vlc_entry__core);
         if (likely(plugin != NULL))
-            module_StoreBank(plugin);
+            vlc_plugin_store(plugin);
         config_SortConfig ();
     }
     modules.usage++;
@@ -518,6 +611,7 @@ void module_EndBank (bool b_plugins)
 {
     vlc_plugin_t *libs = NULL;
     block_t *caches = NULL;
+    void *caps_tree = NULL;
 
     /* If plugins were _not_ loaded, then the caller still has the bank lock
      * from module_InitBank(). */
@@ -532,10 +626,14 @@ void module_EndBank (bool b_plugins)
         config_UnsortConfig ();
         libs = vlc_plugins;
         caches = modules.caches;
+        caps_tree = modules.caps_tree;
         vlc_plugins = NULL;
         modules.caches = NULL;
+        modules.caps_tree = NULL;
     }
     vlc_mutex_unlock (&modules.lock);
+
+    tdestroy(caps_tree, vlc_modcap_free);
 
     while (libs != NULL)
     {
@@ -570,6 +668,8 @@ size_t module_LoadPlugins (vlc_object_t *obj)
 #endif
         config_UnsortConfig ();
         config_SortConfig ();
+
+        twalk(modules.caps_tree, vlc_modcap_sort);
     }
     vlc_mutex_unlock (&modules.lock);
 
@@ -622,45 +722,30 @@ module_t **module_list_get (size_t *n)
     return tab;
 }
 
-static int modulecmp (const void *a, const void *b)
-{
-    const module_t *const *ma = a, *const *mb = b;
-    /* Note that qsort() uses _ascending_ order,
-     * so the smallest module is the one with the biggest score. */
-    return (*mb)->i_score - (*ma)->i_score;
-}
-
 /**
  * Builds a sorted list of all VLC modules with a given capability.
  * The list is sorted from the highest module score to the lowest.
  * @param list pointer to the table of modules [OUT]
- * @param cap capability of modules to look for
+ * @param name name of capability of modules to look for
  * @return the number of matching found, or -1 on error (*list is then NULL).
  * @note *list must be freed with module_list_free().
  */
-ssize_t module_list_cap (module_t ***restrict list, const char *cap)
+ssize_t module_list_cap (module_t ***restrict list, const char *name)
 {
-    /* TODO: This is quite inefficient. List should be sorted by capability. */
-    ssize_t n = 0;
+    const vlc_modcap_t **cp = tfind(&name, &modules.caps_tree, vlc_modcap_cmp);
+    if (cp == NULL)
+    {
+        *list = NULL;
+        return 0;
+    }
 
-    assert (list != NULL);
-
-    for (vlc_plugin_t *lib = vlc_plugins; lib != NULL; lib = lib->next)
-         for (module_t *m = lib->module; m != NULL; m = m->next)
-             if (module_provides(m, cap))
-                 n++;
-
+    const vlc_modcap_t *cap = *cp;
+    size_t n = cap->modc;
     module_t **tab = malloc (sizeof (*tab) * n);
     *list = tab;
     if (unlikely(tab == NULL))
         return -1;
 
-    for (vlc_plugin_t *lib = vlc_plugins; lib != NULL; lib = lib->next)
-         for (module_t *m = lib->module; m != NULL; m = m->next)
-             if (module_provides (m, cap))
-                 *(tab++) = m;
-
-    assert (tab == *list + n);
-    qsort (*list, n, sizeof (*tab), modulecmp);
+    memcpy(tab, cap->modv, sizeof (*tab) * n);
     return n;
 }

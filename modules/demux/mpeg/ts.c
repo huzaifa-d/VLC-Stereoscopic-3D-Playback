@@ -34,6 +34,7 @@
 #include <vlc_plugin.h>
 #include <vlc_access.h>    /* DVB-specific things */
 #include <vlc_demux.h>
+#include <vlc_input.h>
 
 #include "ts_pid.h"
 #include "ts_streams.h"
@@ -166,7 +167,7 @@ static int ChangeKeyCallback( vlc_object_t *, char const *, vlc_value_t, vlc_val
 /* Helpers */
 static bool PIDReferencedByProgram( const ts_pmt_t *, uint16_t );
 void UpdatePESFilters( demux_t *p_demux, bool b_all );
-static inline void FlushESBuffer( ts_pes_t *p_pes );
+static inline void FlushESBuffer( ts_stream_t *p_pes );
 static void UpdatePIDScrambledState( demux_t *p_demux, ts_pid_t *p_pid, bool );
 static inline int PIDGet( block_t *p )
 {
@@ -388,6 +389,8 @@ static int Open( vlc_object_t *p_this )
     p_sys->csa = NULL;
     p_sys->b_start_record = false;
 
+    vlc_dictionary_init( &p_sys->attachments, 0 );
+
     p_sys->patfix.i_first_dts = -1;
     p_sys->patfix.i_timesourcepid = 0;
     p_sys->patfix.status = PAT_WAITING;
@@ -525,6 +528,12 @@ static int Open( vlc_object_t *p_this )
 /*****************************************************************************
  * Close
  *****************************************************************************/
+static void FreeDictAttachment( void *p_value, void *p_obj )
+{
+    VLC_UNUSED(p_obj);
+    vlc_input_attachment_Delete( (input_attachment_t *) p_value );
+}
+
 static void Close( vlc_object_t *p_this )
 {
     demux_t     *p_demux = (demux_t*)p_this;
@@ -558,6 +567,9 @@ static void Close( vlc_object_t *p_this )
 
     /* Release all non default pids */
     ts_pid_list_Release( p_demux, &p_sys->pids );
+
+    /* Clear up attachments */
+    vlc_dictionary_clear( &p_sys->attachments, FreeDictAttachment, NULL );
 
     free( p_sys );
 }
@@ -679,7 +691,7 @@ static int Demux( demux_t *p_demux )
             block_Release( p_pkt );
             break;
 
-        case TYPE_PES:
+        case TYPE_STREAM:
             p_sys->b_end_preparse = true;
 
             if( p_sys->es_creation == DELAY_ES ) /* No longer delay ES since that pid's program sends data */
@@ -697,11 +709,11 @@ static int Demux( demux_t *p_demux )
                 continue;
             }
 
-            if( p_pid->u.p_pes->transport == TS_TRANSPORT_PES )
+            if( p_pid->u.p_stream->transport == TS_TRANSPORT_PES )
             {
                 b_frame = GatherPESData( p_demux, p_pid, p_pkt, i_header );
             }
-            else if( p_pid->u.p_pes->transport == TS_TRANSPORT_SECTIONS )
+            else if( p_pid->u.p_stream->transport == TS_TRANSPORT_SECTIONS )
             {
                 b_frame = GatherSectionsData( p_demux, p_pid, p_pkt, i_header );
             }
@@ -764,7 +776,7 @@ static int EITCurrentEventTime( const ts_pmt_t *p_pmt, demux_sys_t *p_sys,
     return VLC_EGENERIC;
 }
 
-static inline void HasSelectedES( es_out_t *out, const ts_pes_es_t *p_es,
+static inline void HasSelectedES( es_out_t *out, const ts_es_t *p_es,
                                   const ts_pmt_t *p_pmt, bool *pb_stream_selected )
 {
     for( ; p_es && !*pb_stream_selected; p_es = p_es->p_next )
@@ -817,7 +829,7 @@ void UpdatePESFilters( demux_t *p_demux, bool b_all )
             for( int j=0; j<p_pmt->e_streams.i_size; j++ )
             {
                 ts_pid_t *espid = p_pmt->e_streams.p_elems[j];
-                ts_pes_t *p_pes = espid->u.p_pes;
+                ts_stream_t *p_pes = espid->u.p_stream;
 
                 bool b_stream_selected = true;
                 if( !p_pes->b_always_receive && !b_all )
@@ -851,7 +863,7 @@ void UpdatePESFilters( demux_t *p_demux, bool b_all )
             ts_pid_t *espid = p_pmt->e_streams.p_elems[j];
             UpdateHWFilter( p_sys, espid );
             if( (espid->i_flags & FLAG_FILTERED) == 0 )
-                FlushESBuffer( espid->u.p_pes );
+                FlushESBuffer( espid->u.p_stream );
         }
         UpdateHWFilter( p_sys, GetPID(p_sys, p_pmt->i_pid_pcr) );
     }
@@ -1057,7 +1069,7 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
             else // All ES Mode
             {
                 p_sys->b_es_all = true;
-                ts_pat_t *p_pat = GetPID(p_sys, 0)->u.p_pat;
+                p_pat = GetPID(p_sys, 0)->u.p_pat;
                 for( int i = 0; i < p_pat->programs.i_size; i++ )
                    ARRAY_APPEND( p_sys->programs, p_pat->programs.p_elems[i]->i_pid );
                 UpdatePESFilters( p_demux, true );
@@ -1117,6 +1129,36 @@ static int Control( demux_t *p_demux, int i_query, va_list args )
 
     case DEMUX_GET_SIGNAL:
         return vlc_stream_vaControl( p_sys->stream, STREAM_GET_SIGNAL, args );
+
+    case DEMUX_GET_ATTACHMENTS:
+    {
+        input_attachment_t ***ppp_attach = va_arg( args, input_attachment_t *** );
+        int *pi_int = va_arg( args, int * );
+
+        *pi_int = vlc_dictionary_keys_count( &p_sys->attachments );
+        if( *pi_int <= 0 )
+            return VLC_EGENERIC;
+
+        *ppp_attach = malloc( sizeof(input_attachment_t*) * *pi_int );
+        if( !*ppp_attach )
+            return VLC_EGENERIC;
+
+        *pi_int = 0;
+        for( int i = 0; i < p_sys->attachments.i_size; i++ )
+        {
+            for( vlc_dictionary_entry_t *p_entry = p_sys->attachments.p_entries[i];
+                                         p_entry; p_entry = p_entry->p_next )
+            {
+                msg_Err(p_demux, "GET ATTACHMENT %s", p_entry->psz_key);
+                (*ppp_attach)[*pi_int] = vlc_input_attachment_Duplicate(
+                                                (input_attachment_t *) p_entry->p_value );
+                if( (*ppp_attach)[*pi_int] )
+                    (*pi_int)++;
+            }
+        }
+
+        return VLC_SUCCESS;
+    }
 
     default:
         break;
@@ -1250,7 +1292,7 @@ invalid:
     return NULL;
 }
 
-static block_t * ConvertPESBlock( demux_t *p_demux, ts_pes_es_t *p_es,
+static block_t * ConvertPESBlock( demux_t *p_demux, ts_es_t *p_es,
                                   size_t i_pes_size, uint8_t i_stream_id,
                                   block_t *p_block )
 {
@@ -1315,6 +1357,67 @@ static block_t * ConvertPESBlock( demux_t *p_demux, ts_pes_es_t *p_es,
 }
 
 /****************************************************************************
+ * fanouts current block to all subdecoders / shared pid es
+ ****************************************************************************/
+static void SendDataChain( demux_t *p_demux, ts_es_t *p_es, block_t *p_chain )
+{
+    while( p_chain )
+    {
+        block_t *p_block = p_chain;
+        p_chain = p_block->p_next;
+        p_block->p_next = NULL;
+
+        ts_es_t *p_es_send = p_es;
+        if( p_es_send->i_next_block_flags )
+        {
+            p_block->i_flags |= p_es_send->i_next_block_flags;
+            p_es_send->i_next_block_flags = 0;
+        }
+
+        while( p_es_send )
+        {
+            if( p_es_send->p_program->b_selected )
+            {
+                /* Send a copy to each extra es */
+                ts_es_t *p_extra_es = p_es_send->p_extraes;
+                while( p_extra_es )
+                {
+                    if( p_extra_es->id )
+                    {
+                        block_t *p_dup = block_Duplicate( p_block );
+                        if( p_dup )
+                            es_out_Send( p_demux->out, p_extra_es->id, p_dup );
+                    }
+                    p_extra_es = p_extra_es->p_next;
+                }
+
+                if( p_es_send->p_next )
+                {
+                    if( p_es_send->id )
+                    {
+                        block_t *p_dup = block_Duplicate( p_block );
+                        if( p_dup )
+                            es_out_Send( p_demux->out, p_es_send->id, p_dup );
+                    }
+                }
+                else
+                {
+                    if( p_es_send->id )
+                    {
+                        es_out_Send( p_demux->out, p_es_send->id, p_block );
+                        p_block = NULL;
+                    }
+                }
+            }
+            p_es_send = p_es_send->p_next;
+        }
+
+        if( p_block )
+            block_Release( p_block );
+    }
+}
+
+/****************************************************************************
  * gathering stuff
  ****************************************************************************/
 static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
@@ -1329,7 +1432,7 @@ static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
     bool b_pes_scrambling = false;
     const es_mpeg4_descriptor_t *p_mpeg4desc = NULL;
 
-    assert(pid->type == TYPE_PES);
+    assert(pid->type == TYPE_STREAM);
 
     const int i_max = block_ChainExtract( p_pes, header, 34 );
     if ( i_max < 4 )
@@ -1352,7 +1455,7 @@ static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
         p_pes->i_flags &= ~BLOCK_FLAG_SCRAMBLED;
     }
 
-    ts_pes_es_t *p_es = pid->u.p_pes->p_es;
+    ts_es_t *p_es = pid->u.p_stream->p_es;
 
     if( ParsePESHeader( VLC_OBJECT(p_demux), (uint8_t*)&header, i_max, &i_skip,
                         &i_dts, &i_pts, &i_stream_id, &b_pes_scrambling ) == VLC_EGENERIC )
@@ -1444,10 +1547,8 @@ static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
 
         p_pes->i_length = FROM_SCALE_NZ(i_length);
 
-        /* Some codecs might need xform or AU splitting */
-        block_t *p_chain = ConvertPESBlock( p_demux, p_es, i_pes_size, i_stream_id,
-                                            block_ChainGather( p_pes ) );
-
+        /* Can become a chain on next call due to prepcr */
+        block_t *p_chain = block_ChainGather( p_pes );
         while ( p_chain ) {
             block_t *p_block = p_chain;
             p_chain = p_chain->p_next;
@@ -1458,15 +1559,15 @@ static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
 
             if( p_es->id && (p_pmt->pcr.i_current > -1 || p_pmt->pcr.b_disable) )
             {
-                if( pid->u.p_pes->prepcr.p_head )
+                if( pid->u.p_stream->prepcr.p_head )
                 {
                     /* Rebuild current output chain, appending any prepcr outqueue */
-                    block_ChainLastAppend( &pid->u.p_pes->prepcr.pp_last, p_block );
+                    block_ChainLastAppend( &pid->u.p_stream->prepcr.pp_last, p_block );
                     if( p_chain )
-                        block_ChainLastAppend( &pid->u.p_pes->prepcr.pp_last, p_chain );
-                    p_chain = pid->u.p_pes->prepcr.p_head;
-                    pid->u.p_pes->prepcr.p_head = NULL;
-                    pid->u.p_pes->prepcr.pp_last = &pid->u.p_pes->prepcr.p_head;
+                        block_ChainLastAppend( &pid->u.p_stream->prepcr.pp_last, p_chain );
+                    p_chain = pid->u.p_stream->prepcr.p_head;
+                    pid->u.p_stream->prepcr.p_head = NULL;
+                    pid->u.p_stream->prepcr.pp_last = &pid->u.p_stream->prepcr.p_head;
                     /* Then now output all data */
                     continue;
                 }
@@ -1503,114 +1604,35 @@ static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
                         p_block->i_pts += FROM_SCALE_NZ(p_pmt->pcr.i_pcroffset);
                 }
 
-                /* METADATA in PES */
-                if( pid->u.p_pes->i_stream_type == 0x15 && i_stream_id == 0xbd )
+                /*** From here, block can become a chain again though conversion below ***/
+
+                if( pid->u.p_stream->p_proc )
                 {
-                    ProcessMetadata( p_demux->out, p_es->metadata.i_format, p_pmt->i_number,
-                                     p_block->p_buffer, p_block->i_buffer );
+                    if( p_block->i_flags & BLOCK_FLAG_DISCONTINUITY )
+                        ts_stream_processor_Reset( pid->u.p_stream->p_proc );
+                    p_block = ts_stream_processor_Push( pid->u.p_stream->p_proc, i_stream_id, p_block );
+                }
+                else
+                /* Some codecs might need xform or AU splitting */
+                {
+                    p_block = ConvertPESBlock( p_demux, p_es, i_pes_size, i_stream_id, p_block );
                 }
 
-                /* SL in PES */
-                if( pid->u.p_pes->i_stream_type == 0x12 &&
-                    ((i_stream_id & 0xFE) == 0xFA) /* 0xFA || 0xFB */ )
-                {
-                    const es_mpeg4_descriptor_t *p_desc = GetMPEG4DescByEsId( p_pmt, p_es->i_sl_es_id );
-                    if(!p_desc)
-                    {
-                        block_Release( p_block );
-                        p_block = NULL;
-                    }
-                    else
-                    {
-                        sl_header_data header = DecodeSLHeader( p_block->i_buffer, p_block->p_buffer,
-                                                                &p_mpeg4desc->sl_descr );
-                        p_block->i_buffer -= header.i_size;
-                        p_block->p_buffer += header.i_size;
-                        p_block->i_dts = header.i_dts ? header.i_dts : p_block->i_dts;
-                        p_block->i_pts = header.i_pts ? header.i_pts : p_block->i_pts;
-
-                        /* Assemble access units */
-                        if( header.b_au_start && pid->u.p_pes->sl.p_data )
-                        {
-                            block_ChainRelease( pid->u.p_pes->sl.p_data );
-                            pid->u.p_pes->sl.p_data = NULL;
-                            pid->u.p_pes->sl.pp_last = &pid->u.p_pes->sl.p_data;
-                        }
-                        block_ChainLastAppend( &pid->u.p_pes->sl.pp_last, p_block );
-                        p_block = NULL;
-                        if( header.b_au_end )
-                        {
-                            p_block = block_ChainGather( pid->u.p_pes->sl.p_data );
-                            pid->u.p_pes->sl.p_data = NULL;
-                            pid->u.p_pes->sl.pp_last = &pid->u.p_pes->sl.p_data;
-                        }
-                    }
-                }
-
-                if ( p_block )
-                {
-                    ts_pes_es_t *p_es_send = p_es;
-                    if( p_es_send->i_next_block_flags )
-                    {
-                        p_block->i_flags |= p_es_send->i_next_block_flags;
-                        p_es_send->i_next_block_flags = 0;
-                    }
-
-                    while( p_es_send )
-                    {
-                        if( p_es_send->p_program->b_selected )
-                        {
-                            /* Send a copy to each extra es */
-                            ts_pes_es_t *p_extra_es = p_es_send->p_extraes;
-                            while( p_extra_es )
-                            {
-                                if( p_extra_es->id )
-                                {
-                                    block_t *p_dup = block_Duplicate( p_block );
-                                    if( p_dup )
-                                        es_out_Send( p_demux->out, p_extra_es->id, p_dup );
-                                }
-                                p_extra_es = p_extra_es->p_next;
-                            }
-
-                            if( p_es_send->p_next )
-                            {
-                                if( p_es_send->id )
-                                {
-                                    block_t *p_dup = block_Duplicate( p_block );
-                                    if( p_dup )
-                                        es_out_Send( p_demux->out, p_es_send->id, p_dup );
-                                }
-                            }
-                            else
-                            {
-                                if( p_es_send->id )
-                                {
-                                    es_out_Send( p_demux->out, p_es_send->id, p_block );
-                                    p_block = NULL;
-                                }
-                            }
-                        }
-                        p_es_send = p_es_send->p_next;
-                    }
-
-                    if( p_block )
-                        block_Release( p_block );
-                }
+                SendDataChain( p_demux, p_es, p_block );
             }
             else
             {
                 if( !p_pmt->pcr.b_fix_done ) /* Not seen yet */
                     PCRFixHandle( p_demux, p_pmt, p_block );
 
-                block_ChainLastAppend( &pid->u.p_pes->prepcr.pp_last, p_block );
+                block_ChainLastAppend( &pid->u.p_stream->prepcr.pp_last, p_block );
 
                 /* PCR Seen and no es->id, cleanup current and prepcr blocks */
                 if( p_pmt->pcr.i_current > -1)
                 {
-                    block_ChainRelease( pid->u.p_pes->prepcr.p_head );
-                    pid->u.p_pes->prepcr.p_head = NULL;
-                    pid->u.p_pes->prepcr.pp_last = &pid->u.p_pes->prepcr.p_head;
+                    block_ChainRelease( pid->u.p_stream->prepcr.p_head );
+                    pid->u.p_stream->prepcr.p_head = NULL;
+                    pid->u.p_stream->prepcr.pp_last = &pid->u.p_stream->prepcr.p_head;
                 }
             }
         }
@@ -1624,7 +1646,7 @@ static void ParsePESDataChain( demux_t *p_demux, ts_pid_t *pid, block_t *p_pes )
 static bool PushPESBlock( demux_t *p_demux, ts_pid_t *pid, block_t *p_pkt, bool b_unit_start )
 {
     bool b_ret = false;
-    ts_pes_t *p_pes = pid->u.p_pes;
+    ts_stream_t *p_pes = pid->u.p_stream;
 
     if ( b_unit_start && p_pes->gather.p_data )
     {
@@ -1759,7 +1781,7 @@ static mtime_t GetPCR( const block_t *p_pkt )
     return i_pcr;
 }
 
-static inline void UpdateESScrambledState( es_out_t *out, const ts_pes_es_t *p_es, bool b_scrambled )
+static inline void UpdateESScrambledState( es_out_t *out, const ts_es_t *p_es, bool b_scrambled )
 {
     for( ; p_es; p_es = p_es->p_next )
     {
@@ -1783,11 +1805,11 @@ static void UpdatePIDScrambledState( demux_t *p_demux, ts_pid_t *p_pid, bool b_s
     else
         p_pid->i_flags &= ~FLAG_SCRAMBLED;
 
-    if( p_pid->type == TYPE_PES )
-        UpdateESScrambledState( p_demux->out, p_pid->u.p_pes->p_es, b_scrambled );
+    if( p_pid->type == TYPE_STREAM )
+        UpdateESScrambledState( p_demux->out, p_pid->u.p_stream->p_es, b_scrambled );
 }
 
-static inline void FlushESBuffer( ts_pes_t *p_pes )
+static inline void FlushESBuffer( ts_stream_t *p_pes )
 {
     if( p_pes->gather.p_data )
     {
@@ -1797,13 +1819,8 @@ static inline void FlushESBuffer( ts_pes_t *p_pes )
         p_pes->gather.pp_last = &p_pes->gather.p_data;
         p_pes->gather.i_saved = 0;
     }
-
-    if( p_pes->sl.p_data )
-    {
-        block_ChainRelease( p_pes->sl.p_data );
-        p_pes->sl.p_data = NULL;
-        p_pes->sl.pp_last = &p_pes->sl.p_data;
-    }
+    if( p_pes->p_proc )
+        ts_stream_processor_Reset( p_pes->p_proc );
 }
 
 static void ReadyQueuesPostSeek( demux_t *p_demux )
@@ -1817,26 +1834,27 @@ static void ReadyQueuesPostSeek( demux_t *p_demux )
         for( int j=0; j<p_pmt->e_streams.i_size; j++ )
         {
             ts_pid_t *pid = p_pmt->e_streams.p_elems[j];
-            ts_pes_t *p_pes = pid->u.p_pes;
+            ts_stream_t *p_pes = pid->u.p_stream;
 
-            if( pid->type != TYPE_PES )
+            if( pid->type != TYPE_STREAM )
                 continue;
 
-            for( ts_pes_es_t *p_es = p_pes->p_es; p_es; p_es = p_es->p_next )
+            for( ts_es_t *p_es = p_pes->p_es; p_es; p_es = p_es->p_next )
                 p_es->i_next_block_flags |= BLOCK_FLAG_DISCONTINUITY;
 
             pid->i_cc = 0xff;
 
-            if( pid->u.p_pes->prepcr.p_head )
+            if( pid->u.p_stream->prepcr.p_head )
             {
-                block_ChainRelease( pid->u.p_pes->prepcr.p_head );
-                pid->u.p_pes->prepcr.p_head = NULL;
-                pid->u.p_pes->prepcr.pp_last = &pid->u.p_pes->prepcr.p_head;
+                block_ChainRelease( pid->u.p_stream->prepcr.p_head );
+                pid->u.p_stream->prepcr.p_head = NULL;
+                pid->u.p_stream->prepcr.pp_last = &pid->u.p_stream->prepcr.p_head;
             }
 
-            ts_sections_processor_Reset( pid->u.p_pes->p_sections_proc );
+            ts_sections_processor_Reset( pid->u.p_stream->p_sections_proc );
+            ts_stream_processor_Reset( pid->u.p_stream->p_proc );
 
-            FlushESBuffer( pid->u.p_pes );
+            FlushESBuffer( pid->u.p_stream );
         }
         p_pmt->pcr.i_current = -1;
     }
@@ -1888,8 +1906,8 @@ static int SeekToTime( demux_t *p_demux, const ts_pmt_t *p_pmt, int64_t i_scaled
 
             int i_pid = PIDGet( p_pkt );
             ts_pid_t *p_pid = GetPID(p_sys, i_pid);
-            if( i_pid != 0x1FFF && p_pid->type == TYPE_PES &&
-                ts_pes_Find_es( p_pid->u.p_pes, p_pmt ) &&
+            if( i_pid != 0x1FFF && p_pid->type == TYPE_STREAM &&
+                ts_stream_Find_es( p_pid->u.p_stream, p_pmt ) &&
                (p_pkt->p_buffer[1] & 0xC0) == 0x40 && /* Payload start but not corrupt */
                (p_pkt->p_buffer[3] & 0xD0) == 0x10    /* Has payload but is not encrypted */
             )
@@ -1985,8 +2003,8 @@ static int ProbeChunk( demux_t *p_demux, int i_program, bool b_end, int64_t *pi_
             if( *pi_pcr == -1 &&
                 (p_pkt->p_buffer[1] & 0xC0) == 0x40 && /* payload start */
                 (p_pkt->p_buffer[3] & 0xD0) == 0x10 && /* Has payload but is not encrypted */
-                p_pid->type == TYPE_PES &&
-                p_pid->u.p_pes->p_es->fmt.i_cat != UNKNOWN_ES
+                p_pid->type == TYPE_STREAM &&
+                p_pid->u.p_stream->p_es->fmt.i_cat != UNKNOWN_ES
               )
             {
                 b_pcrresult = false;
@@ -2122,11 +2140,11 @@ static void ProgramSetPCR( demux_t *p_demux, ts_pmt_t *p_pmt, mtime_t i_pcr )
         ts_pat_t *p_pat = GetPID(p_sys, 0)->u.p_pat;
         for( int i=0; i< p_pat->programs.i_size; i++ )
         {
-            ts_pmt_t *p_pmt = p_pat->programs.p_elems[i]->u.p_pmt;
-            for( int j=0; j<p_pmt->e_streams.i_size; j++ )
+            ts_pmt_t *p_opmt = p_pat->programs.p_elems[i]->u.p_pmt;
+            for( int j=0; j<p_opmt->e_streams.i_size; j++ )
             {
-                ts_pid_t *p_pid = p_pmt->e_streams.p_elems[j];
-                block_t *p_block = p_pid->u.p_pes->prepcr.p_head;
+                ts_pid_t *p_pid = p_opmt->e_streams.p_elems[j];
+                block_t *p_block = p_pid->u.p_stream->prepcr.p_head;
                 while( p_block && p_block->i_dts == VLC_TS_INVALID )
                     p_block = p_block->p_next;
 
@@ -2165,7 +2183,7 @@ static void ProgramSetPCR( demux_t *p_demux, ts_pmt_t *p_pmt, mtime_t i_pcr )
 static int IsVideoEnd( ts_pid_t *p_pid )
 {
     /* jump to near end of PES packet */
-    block_t *p = p_pid->u.p_pes->gather.p_data;
+    block_t *p = p_pid->u.p_stream->gather.p_data;
     if( !p || !p->p_next )
         return 0;
     while( p->p_next->p_next )
@@ -2190,11 +2208,11 @@ static void PCRCheckDTS( demux_t *p_demux, ts_pmt_t *p_pmt, mtime_t i_pcr)
     {
         ts_pid_t *p_pid = p_pmt->e_streams.p_elems[i];
 
-        if( p_pid->type != TYPE_PES || SCRAMBLED(*p_pid) )
+        if( p_pid->type != TYPE_STREAM || SCRAMBLED(*p_pid) )
             continue;
 
-        ts_pes_t *p_pes = p_pid->u.p_pes;
-        ts_pes_es_t *p_es = p_pes->p_es;
+        ts_stream_t *p_pes = p_pid->u.p_stream;
+        ts_es_t *p_es = p_pes->p_es;
 
         if( p_pes->gather.p_data == NULL )
             continue;
@@ -2309,14 +2327,14 @@ int FindPCRCandidate( ts_pmt_t *p_pmt )
                 }
             }
 
-            if( p_pid->u.p_pes->p_es->fmt.i_cat == AUDIO_ES )
+            if( p_pid->u.p_stream->p_es->fmt.i_cat == AUDIO_ES )
             {
                 if( !p_cand )
                     p_cand = p_pid;
             }
-            else if ( p_pid->u.p_pes->p_es->fmt.i_cat == VIDEO_ES ) /* Otherwise prioritize video dts */
+            else if ( p_pid->u.p_stream->p_es->fmt.i_cat == VIDEO_ES ) /* Otherwise prioritize video dts */
             {
-                if( !p_cand || p_cand->u.p_pes->p_es->fmt.i_cat == AUDIO_ES )
+                if( !p_cand || p_cand->u.p_stream->p_es->fmt.i_cat == AUDIO_ES )
                     p_cand = p_pid;
             }
         }
@@ -2525,7 +2543,7 @@ static uint8_t *FindNextPESHeader( uint8_t *p_buf, size_t i_buffer )
     return NULL;
 }
 
-const uint8_t const pes_sync[] = { 0, 0, 1 };
+static const uint8_t pes_sync[] = { 0, 0, 1 };
 
 static bool MayHaveStartCodeOnEnd( const uint8_t *p_buf, size_t i_buf )
 {
@@ -2537,7 +2555,7 @@ static bool GatherPESData( demux_t *p_demux, ts_pid_t *pid, block_t *p_pkt, size
 {
     const bool b_unit_start = p_pkt->p_buffer[1]&0x40;
     bool b_ret = false;
-    ts_pes_t *p_pes = pid->u.p_pes;
+    ts_stream_t *p_pes = pid->u.p_stream;
 
     /* We have to gather it */
     p_pkt->p_buffer += i_skip;
@@ -2686,12 +2704,12 @@ static bool GatherSectionsData( demux_t *p_demux, ts_pid_t *p_pid, block_t *p_pk
 
     if( p_pkt->i_flags & BLOCK_FLAG_DISCONTINUITY )
     {
-        ts_sections_processor_Reset( p_pid->u.p_pes->p_sections_proc );
+        ts_sections_processor_Reset( p_pid->u.p_stream->p_sections_proc );
     }
 
     if( (p_pkt->i_flags & (BLOCK_FLAG_SCRAMBLED | BLOCK_FLAG_CORRUPTED)) == 0 )
     {
-        ts_sections_processor_Push( p_pid->u.p_pes->p_sections_proc, p_pkt->p_buffer );
+        ts_sections_processor_Push( p_pid->u.p_stream->p_sections_proc, p_pkt->p_buffer );
         b_ret = true;
     }
 
@@ -2726,7 +2744,7 @@ static bool PIDReferencedByProgram( const ts_pmt_t *p_pmt, uint16_t i_pid )
     return false;
 }
 
-static void DoCreateES( demux_t *p_demux, ts_pes_es_t *p_es, const ts_pes_es_t *p_parent_es )
+static void DoCreateES( demux_t *p_demux, ts_es_t *p_es, const ts_es_t *p_parent_es )
 {
     demux_sys_t *p_sys = p_demux->p_sys;
 
@@ -2758,13 +2776,13 @@ void AddAndCreateES( demux_t *p_demux, ts_pid_t *pid, bool b_create_delayed )
 
     if( pid && p_sys->es_creation == CREATE_ES )
     {
-        DoCreateES( p_demux, pid->u.p_pes->p_es, NULL );
+        DoCreateES( p_demux, pid->u.p_stream->p_es, NULL );
 
         /* Update the default program == first created ES group */
         if( p_sys->b_default_selection && p_sys->programs.i_size > 0)
         {
             p_sys->b_default_selection = false;
-            const int i_first_program = pid->u.p_pes->p_es->p_program->i_number;
+            const int i_first_program = pid->u.p_stream->p_es->p_program->i_number;
             if( p_sys->programs.p_elems[0] != i_first_program )
                 p_sys->programs.p_elems[0] = i_first_program;
             msg_Dbg( p_demux, "Default program is %d", i_first_program );
@@ -2778,7 +2796,7 @@ void AddAndCreateES( demux_t *p_demux, ts_pid_t *pid, bool b_create_delayed )
         {
             ts_pmt_t *p_pmt = p_pat->programs.p_elems[i]->u.p_pmt;
             for( int j=0; j<p_pmt->e_streams.i_size; j++ )
-                DoCreateES( p_demux, p_pmt->e_streams.p_elems[j]->u.p_pes->p_es, NULL );
+                DoCreateES( p_demux, p_pmt->e_streams.p_elems[j]->u.p_stream->p_es, NULL );
         }
     }
 }

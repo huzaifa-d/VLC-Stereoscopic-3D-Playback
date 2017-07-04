@@ -1,10 +1,11 @@
 /*****************************************************************************
- * VLCHUDRadiobuttonCell.h: Custom radiobutton cell UI for dark HUD Panels
+ * VLCImageButton.h
  *****************************************************************************
- * Copyright (C) 2016 VLC authors and VideoLAN
+ * Copyright (C) 2017 VLC authors and VideoLAN
  * $Id$
  *
- * Authors: Marvin Scholz <epirat07 -at- gmail -dot- com>
+ * Authors: Cameron Mozie <camsw0rld14@gmail.com>
+ *          Marvin Scholz <epirat07 at gmail dot com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,11 +24,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-@interface VLCHUDRadiobuttonCell : NSButtonCell
+@interface VLCImageButton : NSButton
 
-@property NSGradient *normalGradient;
-@property NSGradient *highlightGradient;
-@property NSGradient *pushedGradient;
-@property NSColor    *textColor;
+@property (nonatomic) IBInspectable BOOL toggle;
 
 @end

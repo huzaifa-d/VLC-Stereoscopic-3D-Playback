@@ -486,7 +486,6 @@ modules/demux/ogg.c
 modules/demux/playlist/asx.c
 modules/demux/playlist/b4s.c
 modules/demux/playlist/dvb.c
-modules/demux/playlist/gvp.c
 modules/demux/playlist/ifo.c
 modules/demux/playlist/itml.c
 modules/demux/playlist/itml.h
@@ -913,6 +912,8 @@ modules/hw/vdpau/chroma.c
 modules/hw/vdpau/deinterlace.c
 modules/hw/vdpau/display.c
 modules/hw/vdpau/sharpen.c
+modules/hw/vaapi/chroma.c
+modules/hw/vaapi/filters.c
 modules/keystore/keychain.m
 modules/lua/demux.c
 modules/lua/intf.c
@@ -1047,7 +1048,7 @@ modules/text_renderer/sapi.cpp
 modules/text_renderer/svg.c
 modules/text_renderer/tdummy.c
 modules/video_chroma/chain.c
-modules/video_chroma/cvpx_i420.c
+modules/video_chroma/cvpx.c
 modules/video_chroma/d3d11_surface.c
 modules/video_chroma/dxa9.c
 modules/video_chroma/grey_yuv.c

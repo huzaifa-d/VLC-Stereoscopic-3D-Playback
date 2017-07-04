@@ -39,7 +39,8 @@
 #include "avcodec.h"
 
 struct decoder_sys_t {
-    AVCODEC_COMMON_MEMBERS
+    AVCodecContext *p_context;
+    const AVCodec  *p_codec;
     bool b_need_ephemer; /* Does the format need the ephemer flag (no end time set) */
 };
 
@@ -51,9 +52,14 @@ static void Flush(decoder_t *);
 /**
  * Initialize subtitle decoder
  */
-int InitSubtitleDec(decoder_t *dec, AVCodecContext *context,
-                    const AVCodec *codec)
+int InitSubtitleDec(vlc_object_t *obj)
 {
+    decoder_t *dec = (decoder_t *)obj;
+    const AVCodec *codec;
+    AVCodecContext *context = ffmpeg_AllocContext(dec, &codec);
+    if (context == NULL)
+        return VLC_EGENERIC;
+
     decoder_sys_t *sys;
 
     /* */
@@ -64,17 +70,20 @@ int InitSubtitleDec(decoder_t *dec, AVCodecContext *context,
         break;
     default:
         msg_Warn(dec, "refusing to decode non validated subtitle codec");
+        avcodec_free_context(&context);
         return VLC_EGENERIC;
     }
 
     /* */
     dec->p_sys = sys = malloc(sizeof(*sys));
-    if (!sys)
+    if (unlikely(sys == NULL))
+    {
+        avcodec_free_context(&context);
         return VLC_ENOMEM;
+    }
 
     sys->p_context = context;
     sys->p_codec = codec;
-    sys->b_delayed_open = false;
     sys->b_need_ephemer = codec->id == AV_CODEC_ID_HDMV_PGS_SUBTITLE;
 
     /* */
@@ -107,6 +116,7 @@ int InitSubtitleDec(decoder_t *dec, AVCodecContext *context,
     if (ret < 0) {
         msg_Err(dec, "cannot open codec (%s)", codec->name);
         free(sys);
+        avcodec_free_context(&context);
         return VLC_EGENERIC;
     }
 
@@ -117,6 +127,16 @@ int InitSubtitleDec(decoder_t *dec, AVCodecContext *context,
     dec->pf_flush  = Flush;
 
     return VLC_SUCCESS;
+}
+
+void EndSubtitleDec(vlc_object_t *obj)
+{
+    decoder_t *dec = (decoder_t *)obj;
+    decoder_sys_t *sys = dec->p_sys;
+    AVCodecContext *ctx = sys->p_context;
+
+    avcodec_free_context(&ctx);
+    free(sys);
 }
 
 /**

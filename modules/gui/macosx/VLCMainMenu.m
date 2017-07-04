@@ -49,7 +49,6 @@
 #import "VLCDebugMessageWindowController.h"
 #import "VLCAddonsWindowController.h"
 #import "VLCTimeSelectionPanelController.h"
-#import "VLCRendererDialog.h"
 #import "NSScreen+VLCAdditions.h"
 
 #ifdef HAVE_SPARKLE
@@ -61,7 +60,6 @@
     VLCAboutWindowController *_aboutWindowController;
     VLCHelpWindowController  *_helpWindowController;
     VLCAddonsWindowController *_addonsController;
-    VLCRendererDialog *_rendererDialog;
 
     NSMenu *_playlistTableColumnsContextMenu;
 
@@ -105,7 +103,6 @@
 #endif
 
     NSString* keyString;
-    playlist_t *p_playlist;
     vlc_value_t val;
     VLCStringUtility *stringUtility = [VLCStringUtility sharedInstance];
     char *key;
@@ -262,14 +259,36 @@
     [self refreshAudioDeviceList];
 
     /* setup subtitles menu */
-#warning subtitles styles menu disabled due to missing adaptation to VLC 3.0
-#if 0
-    [self setupMenu: _subtitle_sizeMenu withIntList:"freetype-rel-fontsize" andSelector:@selector(switchSubtitleOption:)];
+    // Persist those variables on the playlist
+    playlist_t *p_playlist = pl_Get(getIntf());
+    var_Create(p_playlist, "freetype-color", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT);
+    var_Create(p_playlist, "freetype-background-opacity", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT);
+    var_Create(p_playlist, "freetype-background-color", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT);
+    var_Create(p_playlist, "freetype-outline-thickness", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT);
+
     [self setupMenu: _subtitle_textcolorMenu withIntList:"freetype-color" andSelector:@selector(switchSubtitleOption:)];
     [_subtitle_bgopacity_sld setIntValue: config_GetInt(VLC_OBJECT(p_intf), "freetype-background-opacity")];
     [self setupMenu: _subtitle_bgcolorMenu withIntList:"freetype-background-color" andSelector:@selector(switchSubtitleOption:)];
     [self setupMenu: _subtitle_outlinethicknessMenu withIntList:"freetype-outline-thickness" andSelector:@selector(switchSubtitleOption:)];
-#endif
+
+    /* Build size menu based on different scale factors */
+    struct {
+        const char *const name;
+        int scaleValue;
+    } scaleValues[] = {
+        { N_("Smaller"), 50},
+        { N_("Small"),   75},
+        { N_("Normal"), 100},
+        { N_("Large"),  125},
+        { N_("Larger"), 150},
+        { NULL, 0 }
+    };
+
+    for(int i = 0; scaleValues[i].name; i++) {
+        NSMenuItem *menuItem = [_subtitle_sizeMenu addItemWithTitle: _NS(scaleValues[i].name) action:@selector(switchSubtitleSize:) keyEquivalent:@""];
+        [menuItem setTag:scaleValues[i].scaleValue];
+        [menuItem setTarget: self];
+    }
 }
 
 - (void)setupMenu: (NSMenu*)menu withIntList: (char *)psz_name andSelector:(SEL)selector
@@ -345,13 +364,13 @@
 
     [_viewMenu setTitle: _NS("View")];
     [_toggleJumpButtons setTitle: _NS("Show Previous & Next Buttons")];
-    [_toggleJumpButtons setState: config_GetInt(getIntf(), "macosx-show-playback-buttons")];
+    [_toggleJumpButtons setState: var_InheritBool(getIntf(), "macosx-show-playback-buttons")];
     [_togglePlaymodeButtons setTitle: _NS("Show Shuffle & Repeat Buttons")];
-    [_togglePlaymodeButtons setState: config_GetInt(getIntf(), "macosx-show-playmode-buttons")];
+    [_togglePlaymodeButtons setState: var_InheritBool(getIntf(), "macosx-show-playmode-buttons")];
     [_toggleEffectsButton setTitle: _NS("Show Audio Effects Button")];
-    [_toggleEffectsButton setState: config_GetInt(getIntf(), "macosx-show-effects-button")];
+    [_toggleEffectsButton setState: var_InheritBool(getIntf(), "macosx-show-effects-button")];
     [_toggleSidebar setTitle: _NS("Show Sidebar")];
-    [_toggleSidebar setState: config_GetInt(getIntf(), "macosx-show-sidebar")];
+    [_toggleSidebar setState: var_InheritBool(getIntf(), "macosx-show-sidebar")];
     [_playlistTableColumns setTitle: _NS("Playlist Table Columns")];
 
     [_controlsMenu setTitle: _NS("Playback")];
@@ -380,7 +399,6 @@
     [_titleMenu setTitle: _NS("Title")];
     [_chapter setTitle: _NS("Chapter")];
     [_chapterMenu setTitle: _NS("Chapter")];
-    [_renderer setTitle: _NS("Select Renderer…")];
 
     [_audioMenu setTitle: _NS("Audio")];
     [_vol_up setTitle: _NS("Increase Volume")];
@@ -638,7 +656,7 @@
 
 - (IBAction)toggleEffectsButton:(id)sender
 {
-    BOOL b_value = !config_GetInt(getIntf(), "macosx-show-effects-button");
+    BOOL b_value = !var_InheritBool(getIntf(), "macosx-show-effects-button");
     config_PutInt(getIntf(), "macosx-show-effects-button", b_value);
     [(VLCMainWindowControlsBar *)[[[VLCMain sharedInstance] mainWindow] controlsBar] toggleEffectsButton];
     [_toggleEffectsButton setState: b_value];
@@ -646,7 +664,7 @@
 
 - (IBAction)toggleJumpButtons:(id)sender
 {
-    BOOL b_value = !config_GetInt(getIntf(), "macosx-show-playback-buttons");
+    BOOL b_value = !var_InheritBool(getIntf(), "macosx-show-playback-buttons");
     config_PutInt(getIntf(), "macosx-show-playback-buttons", b_value);
 
     [(VLCMainWindowControlsBar *)[[[VLCMain sharedInstance] mainWindow] controlsBar] toggleJumpButtons];
@@ -659,7 +677,7 @@
 
 - (IBAction)togglePlaymodeButtons:(id)sender
 {
-    BOOL b_value = !config_GetInt(getIntf(), "macosx-show-playmode-buttons");
+    BOOL b_value = !var_InheritBool(getIntf(), "macosx-show-playmode-buttons");
     config_PutInt(getIntf(), "macosx-show-playmode-buttons", b_value);
     [(VLCMainWindowControlsBar *)[[[VLCMain sharedInstance] mainWindow] controlsBar] togglePlaymodeButtons];
     [_togglePlaymodeButtons setState: b_value];
@@ -672,7 +690,7 @@
 
 - (void)updateSidebarMenuItem
 {
-    [_toggleSidebar setState: config_GetInt(getIntf(), "macosx-show-sidebar")];
+    [_toggleSidebar setState: var_InheritBool(getIntf(), "macosx-show-sidebar")];
 }
 
 #pragma mark - Playback
@@ -1018,13 +1036,19 @@
         [[VLCCoreInteraction sharedInstance] addSubtitlesToCurrentInput:[openPanel URLs]];
 }
 
+- (void)switchSubtitleSize:(id)sender
+{
+    int intValue = [sender tag];
+    var_SetInteger(pl_Get(getIntf()), "sub-text-scale", intValue);
+}
+
+
 - (void)switchSubtitleOption:(id)sender
 {
     int intValue = [sender tag];
     NSString *representedObject = [sender representedObject];
 
-#warning this won't work anymore and is heritably bad
-    config_PutInt(getIntf(), [representedObject UTF8String], intValue);
+    var_SetInteger(pl_Get(getIntf()), [representedObject UTF8String], intValue);
 
     NSMenu *menu = [sender menu];
     NSUInteger count = (NSUInteger) [menu numberOfItems];
@@ -1035,7 +1059,7 @@
 
 - (IBAction)switchSubtitleBackgroundOpacity:(id)sender
 {
-    config_PutInt(getIntf(), "freetype-background-opacity", [sender intValue]);
+    var_SetInteger(pl_Get(getIntf()), "freetype-background-opacity", [sender intValue]);
 }
 
 - (IBAction)telxTransparent:(id)sender
@@ -1253,14 +1277,6 @@
         _helpWindowController = [[VLCHelpWindowController alloc] init];
 
     [_helpWindowController showHelp];
-}
-
-- (IBAction)showRenderers:(id)sender
-{
-    if (!_rendererDialog)
-        _rendererDialog = [[VLCRendererDialog alloc] init];
-
-    [_rendererDialog showWindow:self];
 }
 
 - (IBAction)openDocumentation:(id)sender

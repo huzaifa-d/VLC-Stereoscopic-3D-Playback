@@ -87,10 +87,10 @@ static void ClearChannels  ( vout_thread_t *, int );
 #define DisplayMessage(vout, ...) \
     do { \
         if (vout) \
-            vout_OSDMessage(vout, SPU_DEFAULT_CHANNEL, __VA_ARGS__); \
+            vout_OSDMessage(vout, VOUT_SPU_CHANNEL_OSD, __VA_ARGS__); \
     } while(0)
 #define DisplayIcon(vout, icon) \
-    do { if(vout) vout_OSDIcon(vout, SPU_DEFAULT_CHANNEL, icon); } while(0)
+    do { if(vout) vout_OSDIcon(vout, VOUT_SPU_CHANNEL_OSD, icon); } while(0)
 
 /*****************************************************************************
  * Module descriptor
@@ -1193,15 +1193,6 @@ static int PutAction( intf_thread_t *p_intf, input_thread_t *p_input,
         case ACTIONID_UNZOOM:
             if( p_vout )
             {
-                bool b_autoscale = var_GetBool( p_vout, "autoscale" );
-                if( b_autoscale )
-                {
-                    DisplayMessage( p_vout, _("Original Size") );
-                    var_SetBool( p_vout, "autoscale", false );
-                    var_SetFloat( p_vout, "zoom", 1.f );
-                    break;
-                }
-
                 vlc_value_t val={0}, val_list, text_list;
                 var_Get( p_vout, "zoom", &val );
                 if( var_Change( p_vout, "zoom", VLC_VAR_GETCHOICES,
@@ -1352,11 +1343,11 @@ static int PutAction( intf_thread_t *p_intf, input_thread_t *p_input,
                 }
                 else
                 {
-                    i_scale = var_GetInteger( p_vout, "sub-text-scale" );
+                    i_scale = var_GetInteger( p_playlist, "sub-text-scale" );
                     i_scale += ((i_action == ACTIONID_SUBTITLE_TEXT_SCALE_UP) ? 1 : -1) * 25;
                     i_scale = VLC_CLIP( i_scale, 10, 500 );
                 }
-                var_SetInteger( p_vout, "sub-text-scale", i_scale );
+                var_SetInteger( p_playlist, "sub-text-scale", i_scale );
                 DisplayMessage( p_vout, _( "Subtitle text scale %d%%" ), i_scale );
             }
         }
@@ -1544,7 +1535,7 @@ static void ClearChannels( vout_thread_t *p_vout, int slider_chan )
 {
     if( p_vout )
     {
-        vout_FlushSubpictureChannel( p_vout, SPU_DEFAULT_CHANNEL );
+        vout_FlushSubpictureChannel( p_vout, VOUT_SPU_CHANNEL_OSD );
         vout_FlushSubpictureChannel( p_vout, slider_chan );
     }
 }

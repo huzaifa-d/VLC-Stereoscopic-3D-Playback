@@ -44,6 +44,7 @@
 #define vout_display_sys_win32_t vout_display_sys_t
 
 #include "common.h"
+#include "../video_chroma/copy.h"
 
 #if !defined(NDEBUG) && defined(HAVE_DXGIDEBUG_H)
 # include <initguid.h>
@@ -116,7 +117,7 @@ int CommonInit(vout_display_t *vd)
 
     if (vd->cfg->is_fullscreen) {
         if (CommonControlSetFullscreen(vd, true))
-            vout_display_SendEventFullscreen(vd, false);
+            vout_display_SendEventFullscreen(vd, false, false);
     }
 
     DisableScreensaver (vd);
@@ -459,57 +460,7 @@ int CommonUpdatePicture(picture_t *picture, picture_t **fallback,
         }
         return VLC_SUCCESS;
     }
-    /* fill in buffer info in first plane */
-    picture->p->p_pixels = data;
-    picture->p->i_pitch  = pitch;
-    picture->p->i_lines  = picture->format.i_height;
-    assert(picture->p->i_visible_pitch <= picture->p->i_pitch);
-    assert(picture->p->i_visible_lines <= picture->p->i_lines);
-
-    /*  Fill chroma planes for biplanar YUV */
-    if (picture->format.i_chroma == VLC_CODEC_NV12 ||
-        picture->format.i_chroma == VLC_CODEC_NV21 ||
-        picture->format.i_chroma == VLC_CODEC_P010) {
-
-        for (int n = 1; n < picture->i_planes; n++) {
-            const plane_t *o = &picture->p[n-1];
-            plane_t *p = &picture->p[n];
-
-            p->p_pixels = o->p_pixels + o->i_lines * o->i_pitch;
-            p->i_pitch  = pitch;
-            p->i_lines  = picture->format.i_height;
-            assert(p->i_visible_pitch <= p->i_pitch);
-            assert(p->i_visible_lines <= p->i_lines);
-        }
-        /* The dx/d3d buffer is always allocated as NV12 */
-        if (vlc_fourcc_AreUVPlanesSwapped(picture->format.i_chroma, VLC_CODEC_NV12)) {
-            /* TODO : Swap NV21 UV planes to match NV12 */
-            return VLC_EGENERIC;
-        }
-    }
-
-    /*  Fill chroma planes for planar YUV */
-    else
-    if (picture->format.i_chroma == VLC_CODEC_I420 ||
-        picture->format.i_chroma == VLC_CODEC_J420 ||
-        picture->format.i_chroma == VLC_CODEC_YV12) {
-
-        for (int n = 1; n < picture->i_planes; n++) {
-            const plane_t *o = &picture->p[n-1];
-            plane_t *p = &picture->p[n];
-
-            p->p_pixels = o->p_pixels + o->i_lines * o->i_pitch;
-            p->i_pitch  = pitch / 2;
-            p->i_lines  = picture->format.i_height / 2;
-        }
-        /* The dx/d3d buffer is always allocated as YV12 */
-        if (vlc_fourcc_AreUVPlanesSwapped(picture->format.i_chroma, VLC_CODEC_YV12)) {
-            uint8_t *p_tmp = picture->p[1].p_pixels;
-            picture->p[1].p_pixels = picture->p[2].p_pixels;
-            picture->p[2].p_pixels = p_tmp;
-        }
-    }
-    return VLC_SUCCESS;
+    return picture_UpdatePlanes(picture, data, pitch);
 }
 
 void AlignRect(RECT *r, int align_boundary, int align_size)
@@ -562,7 +513,7 @@ static void CommonChangeThumbnailClip(vout_display_t *vd, bool show)
         hr = taskbl->lpVtbl->SetThumbnailClip(taskbl, hroot,
                                                  show ? &video : NULL);
         if ( hr != S_OK )
-            msg_Err(vd, "SetThumbNailClip failed: %u", hr);
+            msg_Err(vd, "SetThumbNailClip failed: 0x%0lx", hr);
 
         taskbl->lpVtbl->Release(taskbl);
     }
@@ -671,10 +622,12 @@ int CommonControl(vout_display_t *vd, int query, va_list args)
             .bottom = cfg->display.height,
         };
 
-        AdjustWindowRect(&rect_window, EventThreadGetWindowStyle(sys->event), 0);
-        SetWindowPos(sys->hwnd, 0, 0, 0,
-                     rect_window.right - rect_window.left,
-                     rect_window.bottom - rect_window.top, SWP_NOMOVE);
+        if (!cfg->is_fullscreen) {
+            AdjustWindowRect(&rect_window, EventThreadGetWindowStyle(sys->event), 0);
+            SetWindowPos(sys->hwnd, 0, 0, 0,
+                         rect_window.right - rect_window.left,
+                         rect_window.bottom - rect_window.top, SWP_NOMOVE);
+        }
         UpdateRects(vd, cfg, NULL, false);
         return VLC_SUCCESS;
     }

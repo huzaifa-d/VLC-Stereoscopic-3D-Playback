@@ -31,8 +31,6 @@
 #import "VLCCoreInteraction.h"
 #import <vlc_keys.h>
 
-NSString *const VLCOpenTextFieldWasClicked = @"VLCOpenTextFieldWasClicked";
-
 /*****************************************************************************
  * VLCDragDropView
  *****************************************************************************/
@@ -467,91 +465,6 @@ void _drawFrameInRect(NSRect frameRect)
 @end
 
 /*****************************************************************************
- * VLCTimeField implementation
- *****************************************************************************
- * we need this to catch our click-event in the controller window
- *****************************************************************************/
-
-@interface VLCTimeField()
-{
-    NSShadow * o_string_shadow;
-    NSTextAlignment textAlignment;
-
-    NSString *o_remaining_identifier;
-    BOOL b_time_remaining;
-}
-@end
-
-@implementation VLCTimeField
-+ (void)initialize
-{
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSDictionary *appDefaults = [NSDictionary dictionaryWithObjectsAndKeys:
-                                 @"NO", @"DisplayTimeAsTimeRemaining",
-                                 @"YES", @"DisplayFullscreenTimeAsTimeRemaining",
-                                 nil];
-
-    [defaults registerDefaults:appDefaults];
-}
-
-- (void)setRemainingIdentifier:(NSString *)o_string
-{
-    o_remaining_identifier = o_string;
-    b_time_remaining = [[NSUserDefaults standardUserDefaults] boolForKey:o_remaining_identifier];
-}
-
-- (void)setAlignment:(NSTextAlignment)alignment
-{
-    textAlignment = alignment;
-    [self setStringValue:[self stringValue]];
-}
-
-- (void)setStringValue:(NSString *)string
-{
-    if (!o_string_shadow) {
-        o_string_shadow = [[NSShadow alloc] init];
-        [o_string_shadow setShadowColor: [NSColor colorWithCalibratedWhite:1.0 alpha:0.5]];
-        [o_string_shadow setShadowOffset:NSMakeSize(0.0, -1.0)];
-        [o_string_shadow setShadowBlurRadius:0.0];
-    }
-
-    NSMutableAttributedString *o_attributed_string = [[NSMutableAttributedString alloc] initWithString:string attributes: nil];
-    NSUInteger i_stringLength = [string length];
-
-    [o_attributed_string addAttribute: NSShadowAttributeName value: o_string_shadow range: NSMakeRange(0, i_stringLength)];
-    [o_attributed_string setAlignment: textAlignment range: NSMakeRange(0, i_stringLength)];
-    [self setAttributedStringValue: o_attributed_string];
-}
-
-- (void)mouseDown: (NSEvent *)ourEvent
-{
-    if ( [ourEvent clickCount] > 1 )
-        [[[VLCMain sharedInstance] mainMenu] goToSpecificTime: nil];
-    else
-    {
-        if (o_remaining_identifier) {
-            b_time_remaining = [[NSUserDefaults standardUserDefaults] boolForKey:o_remaining_identifier];
-            b_time_remaining = !b_time_remaining;
-            [[NSUserDefaults standardUserDefaults] setObject:(b_time_remaining ? @"YES" : @"NO") forKey:o_remaining_identifier];
-        } else {
-            b_time_remaining = !b_time_remaining;
-        }
-    }
-
-    [[self nextResponder] mouseDown:ourEvent];
-}
-
-- (BOOL)timeRemaining
-{
-    if (o_remaining_identifier)
-        return [[NSUserDefaults standardUserDefaults] boolForKey:o_remaining_identifier];
-    else
-        return b_time_remaining;
-}
-
-@end
-
-/*****************************************************************************
  * VLCMainWindowSplitView implementation
  * comment 1 + 2 taken from NSSplitView.h (10.7 SDK)
  *****************************************************************************/
@@ -734,17 +647,6 @@ end:
     returnString = [NSString stringWithFormat:@"%@ %@", [theFormatter stringFromNumber:[NSNumber numberWithFloat:returnValue]], suffix];
 
     return returnString;
-}
-
-@end
-
-@implementation VLCOpenTextField
-
-- (void)mouseDown:(NSEvent *)theEvent
-{
-    [[NSNotificationCenter defaultCenter] postNotificationName: VLCOpenTextFieldWasClicked
-                                                        object: self];
-    [super mouseDown: theEvent];
 }
 
 @end

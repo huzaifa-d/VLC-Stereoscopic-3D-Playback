@@ -229,7 +229,8 @@
 {
     [_playPlaylistMenuItem setTitle: _NS("Play")];
     [_deletePlaylistMenuItem setTitle: _NS("Delete")];
-    [_recursiveExpandPlaylistMenuItem setTitle: _NS("Expand Node")];
+    [_recursiveExpandPlaylistMenuItem setTitle: _NS("Expand All")];
+    [_recursiveCollapsePlaylistMenuItem setTitle: _NS("Collapse All")];
     [_selectAllPlaylistMenuItem setTitle: _NS("Select All")];
     [_infoPlaylistMenuItem setTitle: _NS("Media Information...")];
     [_revealInFinderPlaylistMenuItem setTitle: _NS("Reveal in Finder")];
@@ -258,25 +259,31 @@
     if (!item)
         return;
 
-    // select item
+    // Search for item row for selection
     NSInteger itemIndex = [_outlineView rowForItem:item];
     if (itemIndex < 0) {
-        // expand if needed
-        while (item != nil) {
-            VLCPLItem *parent = [item parent];
-
-            if (![_outlineView isExpandable: parent])
-                break;
-            if (![_outlineView isItemExpanded: parent])
-                [_outlineView expandItem: parent];
-            item = parent;
+        // Expand if needed. This must be done from root to child
+        // item in order to work
+        NSMutableArray *itemsToExpand = [NSMutableArray array];
+        VLCPLItem *tmpItem = [item parent];
+        while (tmpItem != nil) {
+            [itemsToExpand addObject:tmpItem];
+            tmpItem = [tmpItem parent];
         }
 
-        // search for row again
-        itemIndex = [_outlineView rowForItem:item];
-        if (itemIndex < 0) {
-            return;
+        for(int i = itemsToExpand.count - 1; i >= 0; i--) {
+            VLCPLItem *currentItem = [itemsToExpand objectAtIndex:i];
+            [_outlineView expandItem: currentItem];
         }
+    }
+
+    // Update highlight for currently playing item
+    [_outlineView reloadData];
+
+    // Search for row again
+    itemIndex = [_outlineView rowForItem:item];
+    if (itemIndex < 0) {
+        return;
     }
 
     [_outlineView selectRowIndexes: [NSIndexSet indexSetWithIndex: itemIndex] byExtendingSelection: NO];
@@ -444,8 +451,12 @@
     } else if ([item action] == @selector(deleteItem:)) {
         return [_outlineView numberOfSelectedRows] > 0 && _model.editAllowed;
     } else if ([item action] == @selector(selectAll:)) {
-        return [_outlineView numberOfRows] >= 0;
+        return [_outlineView numberOfRows] > 0;
     } else if ([item action] == @selector(playItem:)) {
+        return [_outlineView numberOfSelectedRows] > 0;
+    } else if ([item action] == @selector(recursiveExpandOrCollapseNode:)) {
+        return [_outlineView numberOfSelectedRows] > 0;
+    } else if ([item action] == @selector(showInfoPanel:)) {
         return [_outlineView numberOfSelectedRows] > 0;
     }
 
@@ -652,8 +663,10 @@
     PL_UNLOCK;
 }
 
-- (IBAction)recursiveExpandNode:(id)sender
+- (IBAction)recursiveExpandOrCollapseNode:(id)sender
 {
+    bool expand = (sender == _recursiveExpandPlaylistMenuItem);
+
     NSIndexSet * selectedRows = [_outlineView selectedRowIndexes];
     NSUInteger count = [selectedRows count];
     NSUInteger indexes[count];
@@ -668,7 +681,9 @@
          expand an already expanded node, even if children nodes are collapsed. */
         if ([_outlineView isExpandable:item]) {
             [_outlineView collapseItem: item collapseChildren: YES];
-            [_outlineView expandItem: item expandChildren: YES];
+
+            if (expand)
+                [_outlineView expandItem: item expandChildren: YES];
         }
 
         selectedRows = [_outlineView selectedRowIndexes];
@@ -681,24 +696,13 @@
     if (!b_playlistmenu_nib_loaded)
         b_playlistmenu_nib_loaded = [NSBundle loadNibNamed:@"PlaylistMenu" owner:self];
 
-    NSPoint pt;
-    bool b_rows;
-    bool b_item_sel;
-
-    pt = [_outlineView convertPoint: [o_event locationInWindow] fromView: nil];
+    NSPoint pt = [_outlineView convertPoint: [o_event locationInWindow] fromView: nil];
     int row = [_outlineView rowAtPoint:pt];
     if (row != -1 && ![[_outlineView selectedRowIndexes] containsIndex: row])
         [_outlineView selectRowIndexes:[NSIndexSet indexSetWithIndex:row] byExtendingSelection:NO];
 
-    b_item_sel = (row != -1 && [_outlineView selectedRow] != -1);
-    b_rows = [_outlineView numberOfRows] != 0;
-
-    playlist_t *p_playlist = pl_Get(getIntf());
-    bool b_del_allowed = [[self model] editAllowed];
-
-    // TODO move other items to menu validation protocol
-    [_infoPlaylistMenuItem setEnabled: b_item_sel];
-    [_recursiveExpandPlaylistMenuItem setEnabled: b_item_sel];
+    // TODO Reenable once per-item info panel is supported again
+    _infoPlaylistMenuItem.hidden = YES;
 
     return _playlistMenu;
 }
@@ -722,9 +726,6 @@
         type = ORDER_NORMAL;
 
     [[self model] sortForColumn:identifier withMode:type];
-
-    // TODO rework, why do we need a full call here?
-//    [self playlistUpdated];
 
     /* Clear indications of any existing column sorting */
     NSUInteger count = [[_outlineView tableColumns] count];
@@ -766,12 +767,6 @@
         b_is_playing = p_current_item->i_id == [item plItemId];
     }
     PL_UNLOCK;
-
-    /*
-     TODO: repaint all items bold:
-     [self isItem: [o_playing_item pointerValue] inNode: [item pointerValue] checkItemExistence:YES locked:NO]
-     || [o_playing_item isEqual: item]
-     */
 
     if (b_is_playing)
         [cell setFont: [[NSFontManager sharedFontManager] convertFont:fontToUse toHaveTrait:NSBoldFontMask]];

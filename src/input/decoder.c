@@ -170,7 +170,15 @@ static int LoadDecoder( decoder_t *p_dec, bool b_packetizer,
 
     /* Find a suitable decoder/packetizer module */
     if( !b_packetizer )
-        p_dec->p_module = module_need( p_dec, "decoder", "$codec", false );
+    {
+        const char caps[ES_CATEGORY_COUNT][16] = {
+            [VIDEO_ES] = "video decoder",
+            [AUDIO_ES] = "audio decoder",
+            [SPU_ES] = "spu decoder",
+        };
+        p_dec->p_module = module_need( p_dec, caps[p_dec->fmt_in.i_cat],
+                                       "$codec", false );
+    }
     else
         p_dec->p_module = module_need( p_dec, "packetizer", "$packetizer", false );
 
@@ -285,6 +293,20 @@ static vout_thread_t *aout_request_vout( void *p_private,
     return p_vout;
 }
 
+static bool aout_replaygain_changed( const audio_replay_gain_t *a,
+                                     const audio_replay_gain_t *b )
+{
+    for( size_t i=0; i<AUDIO_REPLAY_GAIN_MAX; i++ )
+    {
+        if( a->pb_gain[i] != b->pb_gain[i] ||
+            a->pb_peak[i] != b->pb_peak[i] ||
+            a->pb_gain[i] != b->pb_gain[i] ||
+            a->pb_peak[i] != b->pb_peak[i] )
+            return true;
+    }
+    return false;
+}
+
 static int aout_update_format( decoder_t *p_dec )
 {
     decoder_owner_sys_t *p_owner = p_dec->p_owner;
@@ -302,6 +324,18 @@ static int aout_update_format( decoder_t *p_dec )
         aout_DecDelete( p_aout );
 
         input_resource_PutAout( p_owner->p_resource, p_aout );
+    }
+
+    /* Check if only replay gain has changed */
+    if( aout_replaygain_changed( &p_dec->fmt_in.audio_replay_gain,
+                                 &p_owner->fmt.audio_replay_gain ) )
+    {
+        p_dec->fmt_out.audio_replay_gain = p_dec->fmt_in.audio_replay_gain;
+        if( p_owner->p_aout )
+        {
+            p_owner->fmt.audio_replay_gain = p_dec->fmt_in.audio_replay_gain;
+            var_TriggerCallback( p_owner->p_aout, "audio-replay-gain-mode" );
+        }
     }
 
     if( p_owner->p_aout == NULL )
@@ -390,7 +424,9 @@ static int vout_update_format( decoder_t *p_dec )
         vout_thread_t *p_vout;
 
         if( !p_dec->fmt_out.video.i_width ||
-            !p_dec->fmt_out.video.i_height )
+            !p_dec->fmt_out.video.i_height ||
+            p_dec->fmt_out.video.i_width < p_dec->fmt_out.video.i_visible_width ||
+            p_dec->fmt_out.video.i_height < p_dec->fmt_out.video.i_visible_height )
         {
             /* Can't create a new vout without display size */
             return -1;
@@ -1835,9 +1871,9 @@ static void DeleteDecoder( decoder_t * p_dec )
 }
 
 /* */
-static void DecoderUnsupportedCodec( decoder_t *p_dec, const es_format_t *fmt )
+static void DecoderUnsupportedCodec( decoder_t *p_dec, const es_format_t *fmt, bool b_decoding )
 {
-    if (fmt->i_codec != VLC_FOURCC('u','n','d','f')) {
+    if (fmt->i_codec != VLC_FOURCC('u','n','d','f') && fmt->i_codec) {
         const char *desc = vlc_fourcc_GetDescription(fmt->i_cat, fmt->i_codec);
         if (!desc || !*desc)
             desc = N_("No description for this codec");
@@ -1845,7 +1881,7 @@ static void DecoderUnsupportedCodec( decoder_t *p_dec, const es_format_t *fmt )
         vlc_dialog_display_error( p_dec, _("Codec not supported"),
             _("VLC could not decode the format \"%4.4s\" (%s)"),
             (char*)&fmt->i_codec, desc );
-    } else {
+    } else if( b_decoding ){
         msg_Err( p_dec, "could not identify codec" );
         vlc_dialog_display_error( p_dec, _("Unidentified codec"),
             _("VLC could not identify the audio or video codec" ) );
@@ -1874,7 +1910,7 @@ static decoder_t *decoder_New( vlc_object_t *p_parent, input_thread_t *p_input,
 
     if( !p_dec->p_module )
     {
-        DecoderUnsupportedCodec( p_dec, fmt );
+        DecoderUnsupportedCodec( p_dec, fmt, !p_sout );
 
         DeleteDecoder( p_dec );
         return NULL;
@@ -2136,7 +2172,7 @@ int input_DecoderSetCcState( decoder_t *p_dec, bool b_decode, int i_channel )
         }
         else if( !p_cc->p_module )
         {
-            DecoderUnsupportedCodec( p_dec, &fmt );
+            DecoderUnsupportedCodec( p_dec, &fmt, true );
             input_DecoderDelete(p_cc);
             return VLC_EGENERIC;
         }

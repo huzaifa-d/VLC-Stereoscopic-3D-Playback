@@ -178,7 +178,7 @@ typedef struct input_thread_private_t
 
 static inline input_thread_private_t *input_priv(input_thread_t *input)
 {
-    return (void *)(((char *)input) - offsetof(input_thread_private_t, input));
+    return container_of(input, input_thread_private_t, input);
 }
 
 /***************************************************************************
@@ -274,5 +274,8 @@ void input_SplitMRL( const char **, const char **, const char **,
 /* meta.c */
 void vlc_audio_replay_gain_MergeFromMeta( audio_replay_gain_t *p_dst,
                                           const vlc_meta_t *p_meta );
+
+/* item.c */
+void input_item_node_PostAndDelete( input_item_node_t *p_node );
 
 #endif

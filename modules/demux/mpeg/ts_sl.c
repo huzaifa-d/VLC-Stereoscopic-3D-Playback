@@ -51,11 +51,11 @@ const es_mpeg4_descriptor_t * GetMPEG4DescByEsId( const ts_pmt_t *pmt, uint16_t 
     return NULL;
 }
 
-static ts_pes_es_t * GetPMTESBySLEsId( ts_pmt_t *pmt, uint16_t i_sl_es_id )
+static ts_es_t * GetPMTESBySLEsId( ts_pmt_t *pmt, uint16_t i_sl_es_id )
 {
     for( int i=0; i< pmt->e_streams.i_size; i++ )
     {
-        ts_pes_es_t *p_es = pmt->e_streams.p_elems[i]->u.p_pes->p_es;
+        ts_es_t *p_es = pmt->e_streams.p_elems[i]->u.p_stream->p_es;
         if( p_es->i_sl_es_id == i_sl_es_id )
             return p_es;
     }
@@ -155,7 +155,7 @@ void SLPackets_Section_Handler( demux_t *p_demux,
                                 void *p_pes_cbdata )
 {
     VLC_UNUSED(p_sectiondata); VLC_UNUSED(i_sectiondata);
-    ts_pes_t *p_pes = (ts_pes_t *) p_pes_cbdata;
+    ts_stream_t *p_pes = (ts_stream_t *) p_pes_cbdata;
     ts_pmt_t *p_pmt = p_pes->p_es->p_program;
 
     const es_mpeg4_descriptor_t *p_mpeg4desc = GetMPEG4DescByEsId( p_pmt, p_pes->p_es->i_sl_es_id );
@@ -177,7 +177,7 @@ void SLPackets_Section_Handler( demux_t *p_demux,
             for( int j = 0; j < ES_DESCRIPTOR_COUNT && p_od->es_descr[j].b_ok; j++ )
             {
                 p_mpeg4desc = &p_od->es_descr[j];
-                ts_pes_es_t *p_es = GetPMTESBySLEsId( p_pmt, p_mpeg4desc->i_es_id );
+                ts_es_t *p_es = GetPMTESBySLEsId( p_pmt, p_mpeg4desc->i_es_id );
                 es_format_t fmt;
                 es_format_Init( &fmt, UNKNOWN_ES, 0 );
                 fmt.i_id = p_es->fmt.i_id;
@@ -205,3 +205,97 @@ void SLPackets_Section_Handler( demux_t *p_demux,
     }
 }
 
+typedef struct
+{
+    block_t     *p_au;
+    block_t     **pp_au_last;
+    ts_stream_t *p_stream;
+
+} SL_stream_processor_context_t;
+
+static void SL_stream_processor_Delete( ts_stream_processor_t *h )
+{
+    SL_stream_processor_context_t *ctx = (SL_stream_processor_context_t *) h->priv;
+    block_ChainRelease( ctx->p_au );
+    free( ctx );
+    free( h );
+}
+
+static void SL_stream_processor_Reset( ts_stream_processor_t *h )
+{
+    SL_stream_processor_context_t *ctx = (SL_stream_processor_context_t *) h->priv;
+    block_ChainRelease( ctx->p_au );
+    ctx->p_au = NULL;
+    ctx->pp_au_last = &ctx->p_au;
+}
+
+static block_t * SL_stream_processor_Push( ts_stream_processor_t *h, uint8_t i_stream_id, block_t *p_block )
+{
+    SL_stream_processor_context_t *ctx = (SL_stream_processor_context_t *) h->priv;
+    ts_es_t *p_es = ctx->p_stream->p_es;
+    ts_pmt_t *p_pmt = p_es->p_program;
+
+    if( ((i_stream_id & 0xFE) != 0xFA) /* 0xFA || 0xFB */ )
+    {
+        block_Release( p_block );
+        return NULL;
+    }
+
+    const es_mpeg4_descriptor_t *p_desc = GetMPEG4DescByEsId( p_pmt, p_es->i_sl_es_id );
+    if(!p_desc)
+    {
+        block_Release( p_block );
+        p_block = NULL;
+    }
+    else
+    {
+        sl_header_data header = DecodeSLHeader( p_block->i_buffer, p_block->p_buffer,
+                                                &p_desc->sl_descr );
+        p_block->i_buffer -= header.i_size;
+        p_block->p_buffer += header.i_size;
+        p_block->i_dts = header.i_dts ? header.i_dts : p_block->i_dts;
+        p_block->i_pts = header.i_pts ? header.i_pts : p_block->i_pts;
+
+        /* Assemble access units */
+        if( header.b_au_start && ctx->p_au )
+        {
+            block_ChainRelease( ctx->p_au );
+            ctx->p_au = NULL;
+            ctx->pp_au_last = &ctx->p_au;
+        }
+        block_ChainLastAppend( &ctx->pp_au_last, p_block );
+        p_block = NULL;
+        if( header.b_au_end )
+        {
+            p_block = block_ChainGather( ctx->p_au );
+            ctx->p_au = NULL;
+            ctx->pp_au_last = &ctx->p_au;
+        }
+    }
+
+    return p_block;
+}
+
+ts_stream_processor_t *SL_stream_processor_New( ts_stream_t *p_stream )
+{
+    ts_stream_processor_t *h = malloc(sizeof(*h));
+    if(!h)
+        return NULL;
+
+    SL_stream_processor_context_t *ctx = malloc( sizeof(SL_stream_processor_context_t) );
+    if(!ctx)
+    {
+        free(h);
+        return NULL;
+    }
+    ctx->p_au = NULL;
+    ctx->pp_au_last = &ctx->p_au;
+    ctx->p_stream = p_stream;
+
+    h->priv = ctx;
+    h->pf_delete = SL_stream_processor_Delete;
+    h->pf_push = SL_stream_processor_Push;
+    h->pf_reset = SL_stream_processor_Reset;
+
+    return h;
+}

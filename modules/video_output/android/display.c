@@ -67,6 +67,7 @@ vlc_module_begin()
     add_submodule ()
         set_description("Android opaque video output")
         set_capability("vout display", 280)
+        add_shortcut("android-opaque")
         set_callbacks(OpenOpaque, Close)
 vlc_module_end()
 
@@ -746,7 +747,7 @@ static int OpenCommon(vout_display_t *vd)
         /* Export the subpicture capability of this vout. */
         vd->info.subpicture_chromas = subpicture_chromas;
     }
-    else if (sys->p_window->b_opaque)
+    else if (!vd->obj.force && sys->p_window->b_opaque)
     {
         msg_Warn(vd, "cannot blend subtitles with an opaque surface, "
                      "trying next vout");

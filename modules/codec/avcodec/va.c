@@ -38,8 +38,17 @@ vlc_fourcc_t vlc_va_GetChroma(enum PixelFormat hwfmt, enum PixelFormat swfmt)
     switch (hwfmt)
     {
         case AV_PIX_FMT_VAAPI_VLD:
-            return VLC_CODEC_YV12;
-
+            switch (swfmt)
+            {
+                case AV_PIX_FMT_YUV420P:
+                    return VLC_CODEC_VAAPI_420;
+                /* TODO: add 10 bits support
+                 * case AV_PIX_FMT_YUV420P10LE:
+                 *    return VLC_CODEC_VAAPI_420_10B;
+                 */
+                default:
+                    return 0;
+            }
         case AV_PIX_FMT_DXVA2_VLD:
             switch (swfmt)
             {
@@ -100,10 +109,10 @@ static int vlc_va_Start(void *func, va_list ap)
 static void vlc_va_Stop(void *func, va_list ap)
 {
     vlc_va_t *va = va_arg(ap, vlc_va_t *);
-    AVCodecContext *ctx = va_arg(ap, AVCodecContext *);
-    void (*close)(vlc_va_t *, AVCodecContext *) = func;
+    void *hwctx = va_arg(ap, void *);
+    void (*close)(vlc_va_t *, void *) = func;
 
-    close(va, ctx);
+    close(va, hwctx);
 }
 
 vlc_va_t *vlc_va_New(vlc_object_t *obj, AVCodecContext *avctx,
@@ -119,26 +128,13 @@ vlc_va_t *vlc_va_New(vlc_object_t *obj, AVCodecContext *avctx,
     if (va->module == NULL)
     {
         vlc_object_release(va);
-#ifdef _WIN32
-        return NULL;
-    }
-
-    vlc_fourcc_t chroma;
-    vlc_fourcc_t expected = vlc_va_GetChroma( pix_fmt, avctx->sw_pix_fmt );
-    va->setup(va, &chroma);
-    if (chroma != expected)
-    {   /* Mismatch, cannot work, fail */
-        msg_Dbg( obj, "chroma mismatch %4.4s expected %4.4s",
-                 (const char*)&chroma, (const char*) &expected );
-        vlc_va_Delete(va, avctx);
-#endif
         va = NULL;
     }
     return va;
 }
 
-void vlc_va_Delete(vlc_va_t *va, AVCodecContext *avctx)
+void vlc_va_Delete(vlc_va_t *va, void **hwctx)
 {
-    vlc_module_unload(va->module, vlc_va_Stop, va, avctx);
+    vlc_module_unload(va, va->module, vlc_va_Stop, va, hwctx);
     vlc_object_release(va);
 }

@@ -23,7 +23,7 @@
 #endif
 
 #include "internal.h"
-#include <VideoToolbox/VideoToolbox.h>
+#include "../../codec/vt_utils.h"
 
 #if TARGET_OS_IPHONE
 #include <OpenGLES/ES2/gl.h>
@@ -41,11 +41,6 @@ struct gl_sys
 };
 #endif
 
-struct picture_sys_t
-{
-    CVPixelBufferRef pixelBuffer;
-};
-
 struct priv
 {
     picture_t *last_pic;
@@ -53,58 +48,6 @@ struct priv
     CVOpenGLESTextureCacheRef cache;
 #endif
 };
-
-static void
-pic_destroy_cb(picture_t *pic)
-{
-    if (pic->p_sys->pixelBuffer != NULL)
-        CFRelease(pic->p_sys->pixelBuffer);
-
-    free(pic->p_sys);
-    free(pic);
-}
-
-static picture_pool_t *
-tc_cvpx_get_pool(const opengl_tex_converter_t *tc, const video_format_t *fmt,
-                 unsigned requested_count)
-{
-    (void) tc;
-    picture_t *picture[VLCGL_PICTURE_MAX] = {NULL, };
-    unsigned count;
-
-    for (count = 0; count < requested_count; count++)
-    {
-        picture_sys_t *p_picsys = calloc(1, sizeof(*p_picsys));
-        if (unlikely(p_picsys == NULL))
-            goto error;
-        picture_resource_t rsc = {
-            .p_sys = p_picsys,
-            .pf_destroy = pic_destroy_cb,
-        };
-
-        picture[count] = picture_NewFromResource(fmt, &rsc);
-        if (!picture[count])
-        {
-            free(p_picsys);
-            goto error;
-        }
-    }
-
-    /* Wrap the pictures into a pool */
-    picture_pool_configuration_t pool_cfg = {
-        .picture_count = requested_count,
-        .picture       = picture,
-    };
-    picture_pool_t *pool = picture_pool_NewExtended(&pool_cfg);
-    if (!pool)
-        goto error;
-
-    return pool;
-error:
-    for (unsigned i = 0; i < count; i++)
-        picture_Release(picture[i]);
-    return NULL;
-}
 
 #if TARGET_OS_IPHONE
 /* CVOpenGLESTextureCache version (ios) */
@@ -115,9 +58,8 @@ tc_cvpx_update(const opengl_tex_converter_t *tc, GLuint *textures,
 {
     (void) plane_offset;
     struct priv *priv = tc->priv;
-    picture_sys_t *picsys = pic->p_sys;
 
-    assert(picsys->pixelBuffer != NULL);
+    CVPixelBufferRef pixelBuffer = cvpxpic_get_ref(pic);
 
     for (unsigned i = 0; i < tc->tex_count; ++i)
     {
@@ -126,7 +68,7 @@ tc_cvpx_update(const opengl_tex_converter_t *tc, GLuint *textures,
 
         CVOpenGLESTextureRef texture;
         CVReturn err = CVOpenGLESTextureCacheCreateTextureFromImage(
-            kCFAllocatorDefault, priv->cache, picsys->pixelBuffer, NULL,
+            kCFAllocatorDefault, priv->cache, pixelBuffer, NULL,
             tc->tex_target, tc->texs[i].internal, tex_width[i], tex_height[i],
             tc->texs[i].format, tc->texs[i].type, i, &texture);
         if (err != noErr)
@@ -149,13 +91,7 @@ tc_cvpx_update(const opengl_tex_converter_t *tc, GLuint *textures,
     if (priv->last_pic != pic)
     {
         if (priv->last_pic != NULL)
-        {
-            picture_sys_t *picsys = priv->last_pic->p_sys;
-            assert(picsys->pixelBuffer != NULL);
-            CFRelease(picsys->pixelBuffer);
-            picsys->pixelBuffer = NULL;
             picture_Release(priv->last_pic);
-        }
         priv->last_pic = picture_Hold(pic);
     }
     return VLC_SUCCESS;
@@ -171,11 +107,10 @@ tc_cvpx_update(const opengl_tex_converter_t *tc, GLuint *textures,
     (void) plane_offset;
     struct priv *priv = tc->priv;
     struct gl_sys *glsys = tc->gl->sys;
-    picture_sys_t *picsys = pic->p_sys;
 
-    assert(picsys->pixelBuffer != NULL);
+    CVPixelBufferRef pixelBuffer = cvpxpic_get_ref(pic);
 
-    IOSurfaceRef surface = CVPixelBufferGetIOSurface(picsys->pixelBuffer);
+    IOSurfaceRef surface = CVPixelBufferGetIOSurface(pixelBuffer);
 
     for (unsigned i = 0; i < tc->tex_count; ++i)
     {
@@ -201,13 +136,7 @@ tc_cvpx_update(const opengl_tex_converter_t *tc, GLuint *textures,
     if (priv->last_pic != pic)
     {
         if (priv->last_pic != NULL)
-        {
-            picture_sys_t *picsys = priv->last_pic->p_sys;
-            assert(picsys->pixelBuffer != NULL);
-            CFRelease(picsys->pixelBuffer);
-            picsys->pixelBuffer = NULL;
             picture_Release(priv->last_pic);
-        }
         priv->last_pic = picture_Hold(pic);
     }
 
@@ -228,18 +157,18 @@ tc_cvpx_release(const opengl_tex_converter_t *tc)
     free(tc->priv);
 }
 
-GLuint
-opengl_tex_converter_cvpx_init(video_format_t *fmt, opengl_tex_converter_t *tc)
+int
+opengl_tex_converter_cvpx_init(opengl_tex_converter_t *tc)
 {
-    if (fmt->i_chroma != VLC_CODEC_CVPX_UYVY
-     && fmt->i_chroma != VLC_CODEC_CVPX_NV12
-     && fmt->i_chroma != VLC_CODEC_CVPX_I420
-     && fmt->i_chroma != VLC_CODEC_CVPX_BGRA)
-        return 0;
+    if (tc->fmt.i_chroma != VLC_CODEC_CVPX_UYVY
+     && tc->fmt.i_chroma != VLC_CODEC_CVPX_NV12
+     && tc->fmt.i_chroma != VLC_CODEC_CVPX_I420
+     && tc->fmt.i_chroma != VLC_CODEC_CVPX_BGRA)
+        return VLC_EGENERIC;
 
     struct priv *priv = calloc(1, sizeof(struct priv));
     if (unlikely(priv == NULL))
-        return 0;
+        return VLC_ENOMEM;
 
 #if TARGET_OS_IPHONE
     const GLenum tex_target = GL_TEXTURE_2D;
@@ -253,7 +182,7 @@ opengl_tex_converter_cvpx_init(video_format_t *fmt, opengl_tex_converter_t *tc)
         {
             msg_Err(tc->gl, "CVOpenGLESTextureCacheCreate failed: %d", err);
             free(priv);
-            return 0;
+            return VLC_EGENERIC;
         }
     }
     tc->handle_texs_gen = true;
@@ -262,12 +191,12 @@ opengl_tex_converter_cvpx_init(video_format_t *fmt, opengl_tex_converter_t *tc)
 #endif
 
     GLuint fragment_shader;
-    switch (fmt->i_chroma)
+    switch (tc->fmt.i_chroma)
     {
         case VLC_CODEC_CVPX_UYVY:
             fragment_shader =
                 opengl_fragment_shader_init(tc, tex_target, VLC_CODEC_UYVY,
-                                            fmt->space);
+                                            tc->fmt.space);
             tc->texs[0].internal = GL_RGB;
             tc->texs[0].format = GL_RGB_422_APPLE;
             tc->texs[0].type = GL_UNSIGNED_SHORT_8_8_APPLE;
@@ -276,13 +205,13 @@ opengl_tex_converter_cvpx_init(video_format_t *fmt, opengl_tex_converter_t *tc)
         {
             fragment_shader =
                 opengl_fragment_shader_init(tc, tex_target, VLC_CODEC_NV12,
-                                            fmt->space);
+                                            tc->fmt.space);
             break;
         }
         case VLC_CODEC_CVPX_I420:
             fragment_shader =
                 opengl_fragment_shader_init(tc, tex_target, VLC_CODEC_I420,
-                                            fmt->space);
+                                            tc->fmt.space);
             break;
         case VLC_CODEC_CVPX_BGRA:
             fragment_shader =
@@ -303,13 +232,13 @@ opengl_tex_converter_cvpx_init(video_format_t *fmt, opengl_tex_converter_t *tc)
     if (fragment_shader == 0)
     {
         free(priv);
-        return 0;
+        return VLC_EGENERIC;
     }
 
     tc->priv              = priv;
-    tc->pf_get_pool       = tc_cvpx_get_pool;
     tc->pf_update         = tc_cvpx_update;
     tc->pf_release        = tc_cvpx_release;
+    tc->fshader           = fragment_shader;
 
-    return fragment_shader;
+    return VLC_SUCCESS;
 }

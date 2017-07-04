@@ -98,6 +98,8 @@ es_format_Copy
 es_format_Init
 es_format_InitFromVideo
 es_format_IsSimilar
+filter_AddProxyCallbacks
+filter_DelProxyCallbacks
 filter_Blend
 filter_chain_AppendConverter
 filter_chain_AppendFilter
@@ -192,8 +194,6 @@ input_item_node_AppendItem
 input_item_node_AppendNode
 input_item_node_Create
 input_item_node_Delete
-input_item_node_PostAndDelete
-input_item_PostSubItem
 input_item_ReplaceInfos
 input_item_SetDuration
 input_item_SetMeta
@@ -273,6 +273,9 @@ vlc_LogSet
 vlc_vaLog
 vlc_strerror
 vlc_strerror_c
+vlc_malloc
+vlc_calloc
+vlc_free
 msleep
 mwait
 net_Accept

@@ -76,7 +76,7 @@ vlc_module_begin ()
     set_category( CAT_INPUT )
     set_subcategory( SUBCAT_INPUT_ACODEC )
     set_description( N_("MPEG audio layer I/II/III decoder") )
-    set_capability( "decoder", 99 )
+    set_capability( "audio decoder", 99 )
     set_callbacks( Open, Close )
 vlc_module_end ()
 
@@ -212,7 +212,10 @@ end:
 reject:
     p_sys->i_reject_count--;
     if( p_out_buf )
+    {
         block_Release( p_out_buf );
+        p_out_buf = NULL;
+    }
     goto end;
 }
 

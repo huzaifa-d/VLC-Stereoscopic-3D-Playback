@@ -44,6 +44,23 @@
 
 #import <vlc_url.h>
 
+NSString *const VLCOpenTextFieldWasClicked = @"VLCOpenTextFieldWasClicked";
+
+@interface VLCOpenTextField : NSTextField
+- (void)mouseDown:(NSEvent *)theEvent;
+@end
+
+@implementation VLCOpenTextField
+
+- (void)mouseDown:(NSEvent *)theEvent
+{
+    [[NSNotificationCenter defaultCenter] postNotificationName: VLCOpenTextFieldWasClicked
+                                                        object: self];
+    [super mouseDown: theEvent];
+}
+
+@end
+
 struct display_info_t
 {
     CGRect rect;
@@ -112,10 +129,13 @@ static NSString *kCaptureTabViewId  = @"capture";
     [self.window setCollectionBehavior: NSWindowCollectionBehaviorFullScreenAuxiliary];
 
     [self.window setTitle: _NS("Open Source")];
-    [_mrlLabel setStringValue: _NS("Media Resource Locator (MRL)")];
+    [_mrlButtonLabel setTitle: _NS("Media Resource Locator (MRL)")];
 
     [_okButton setTitle: _NS("Open")];
     [_cancelButton setTitle: _NS("Cancel")];
+
+    [_outputCheckbox setTitle:_NS("Stream output:")];
+    [_outputSettingsButton setTitle:_NS("Settings...")];
 
     [[_tabView tabViewItemAtIndex: 0] setLabel: _NS("File")];
     [_tabView accessibilitySetOverrideValue:_NS("4 Tabs to choose between media input. Select 'File' for files, 'Disc' for optical media such as DVDs, Audio CDs or BRs, 'Network' for network streams or 'Capture' for Input Devices such as microphones or cameras.") forAttribute:NSAccessibilityDescriptionAttribute];
@@ -199,6 +219,9 @@ static NSString *kCaptureTabViewId  = @"capture";
     // setup start / stop time fields
     [_fileStartTimeTextField setFormatter:[[PositionFormatter alloc] init]];
     [_fileStopTimeTextField setFormatter:[[PositionFormatter alloc] init]];
+
+    // Auto collapse MRL field
+    self.mrlViewHeightConstraint.constant = 0;
 
     [self updateQTKVideoDevices];
     [_qtkVideoDevicePopup removeAllItems];
@@ -553,33 +576,11 @@ static NSString *kCaptureTabViewId  = @"capture";
 
 - (IBAction)expandMRLfieldAction:(id)sender
 {
-    NSRect windowRect = [self.window frame];
-    NSRect viewRect = [_mrlView frame];
-
     if ([_mrlButton state] == NSOffState) {
-        /* we need to collaps, restore the panel size */
-        windowRect.size.height = windowRect.size.height - viewRect.size.height;
-        windowRect.origin.y = (windowRect.origin.y + viewRect.size.height) - viewRect.size.height;
-
-        /* remove the MRL view */
-        [_mrlView removeFromSuperview];
+        self.mrlViewHeightConstraint.animator.constant = 0;
     } else {
-        /* we need to expand */
-        [_mrlView setFrame: NSMakeRect(0,
-                                       [_mrlButton frame].origin.y,
-                                       viewRect.size.width,
-                                       viewRect.size.height)];
-        [_mrlView setNeedsDisplay: NO];
-        [_mrlView setAutoresizesSubviews: YES];
-
-        /* enlarge panel size for MRL view */
-        windowRect.size.height = windowRect.size.height + viewRect.size.height;
+        self.mrlViewHeightConstraint.animator.constant = 39;
     }
-
-    [[self.window animator] setFrame: windowRect display:YES];
-
-    if ([_mrlButton state] == NSOnState)
-        [[self.window contentView] addSubview: _mrlView];
 }
 
 - (void)openFileGeneric

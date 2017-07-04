@@ -94,7 +94,7 @@ static const int level_zvbi_values[] =
 vlc_module_begin ()
     set_description( N_("VBI and Teletext decoder") )
     set_shortname( N_("VBI & Teletext") )
-    set_capability( "decoder", 51 )
+    set_capability( "spu decoder", 51 )
     set_category( CAT_INPUT )
     set_subcategory( SUBCAT_INPUT_SCODEC )
     set_callbacks( Open, Close )
@@ -231,9 +231,9 @@ static int Open( vlc_object_t *p_this )
         return VLC_ENOMEM;
     }
 
-    /* Some broadcasters in countries with level 1 and level 1.5 still not send a G0 to do 
+    /* Some broadcasters in countries with level 1 and level 1.5 still not send a G0 to do
      * matches against table 32 of ETSI 300 706. We try to do some best effort guessing
-     * This is not perfect, but might handle some cases where we know the vbi language 
+     * This is not perfect, but might handle some cases where we know the vbi language
      * is known. It would be better if people started sending G0 */
     for( int i = 0; ppsz_default_triplet[i] != NULL; i++ )
     {
@@ -276,11 +276,8 @@ static int Open( vlc_object_t *p_this )
     /* Listen for keys */
     var_AddCallback( p_dec->obj.libvlc, "key-pressed", EventKey, p_dec );
 
-    es_format_Init( &p_dec->fmt_out, SPU_ES, VLC_CODEC_SPU );
-    if( p_sys->b_text )
-        p_dec->fmt_out.video.i_chroma = VLC_CODEC_TEXT;
-    else
-        p_dec->fmt_out.video.i_chroma = VLC_CODEC_RGBA;
+    es_format_Init( &p_dec->fmt_out, SPU_ES,
+                    p_sys->b_text ? VLC_CODEC_TEXT : VLC_CODEC_RGBA );
 
     p_dec->pf_decode = Decode;
     return VLC_SUCCESS;

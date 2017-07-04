@@ -23,17 +23,9 @@
 
 #include <vlc_input.h>
 
-int Control(demux_t *, int, va_list);
 char *ProcessMRL( const char *, const char * );
-char *FindPrefix( demux_t * );
-
-int Import_Old ( vlc_object_t * );
-
-int Import_Native ( vlc_object_t * );
-void Close_Native ( vlc_object_t * );
 
 int Import_M3U ( vlc_object_t * );
-void Close_M3U ( vlc_object_t * );
 
 int Import_RAM ( vlc_object_t * );
 
@@ -57,35 +49,20 @@ void Close_SGIMB ( vlc_object_t * );
 
 int Import_QTL ( vlc_object_t * );
 
-int Import_GVP ( vlc_object_t * );
-void Close_GVP ( vlc_object_t * );
-
 int Import_IFO ( vlc_object_t * );
 void Close_IFO ( vlc_object_t * );
 
-int Import_VideoPortal ( vlc_object_t * );
-void Close_VideoPortal ( vlc_object_t * );
-
 int Import_iTML ( vlc_object_t * );
-void Close_iTML ( vlc_object_t * );
 
 int Import_WPL ( vlc_object_t * );
 void Close_WPL ( vlc_object_t * );
 
-int Import_Dir ( vlc_object_t * );
+#define GetCurrentItem(obj) input_GetItem((obj)->p_input)
+#define GetSource(obj) ((obj)->p_source)
 
-static inline input_item_t * GetCurrentItem(demux_t *p_demux)
-{
-    return input_GetItem( p_demux->p_input );
-}
-
-#define CHECK_FILE() \
+#define CHECK_FILE(obj) \
 do { \
-    if( vlc_stream_Control( ((demux_t *)p_this)->s, \
+    if( vlc_stream_Control( GetSource(obj), \
                             STREAM_IS_DIRECTORY ) == VLC_SUCCESS ) \
         return VLC_EGENERIC; \
 } while(0)
-
-#define STANDARD_DEMUX_INIT_MSG( msg ) do { \
-    DEMUX_INIT_COMMON();                    \
-    msg_Dbg( p_demux, "%s", msg ); } while(0)

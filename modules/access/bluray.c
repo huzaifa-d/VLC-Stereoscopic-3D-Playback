@@ -627,6 +627,9 @@ static int blurayOpen(vlc_object_t *object)
     const char *error_msg = NULL;
 #define BLURAY_ERROR(s) do { error_msg = s; goto error; } while(0)
 
+    if (unlikely(!p_demux->p_input))
+        return VLC_EGENERIC;
+
     forced = !strcasecmp(p_demux->psz_access, "bluray");
 
     if (p_demux->s) {
@@ -650,7 +653,7 @@ static int blurayOpen(vlc_object_t *object)
     }
 
     /* */
-    p_demux->p_sys = p_sys = calloc(1, sizeof(*p_sys));
+    p_demux->p_sys = p_sys = vlc_calloc(object, 1, sizeof(*p_sys));
     if (unlikely(!p_sys))
         return VLC_ENOMEM;
 
@@ -802,10 +805,6 @@ static int blurayOpen(vlc_object_t *object)
 
     /* Registering overlay event handler */
     bd_register_overlay_proc(p_sys->bluray, p_demux, blurayOverlayProc);
-    if (unlikely(!p_demux->p_input)) {
-        msg_Err(p_demux, "Could not get parent input");
-        goto error;
-    }
 
     if (p_sys->b_menu) {
 
@@ -903,7 +902,6 @@ static void blurayClose(vlc_object_t *object)
     vlc_mutex_destroy(&p_sys->read_block_lock);
 
     free(p_sys->psz_bd_path);
-    free(p_sys);
 }
 
 /*****************************************************************************
@@ -1923,17 +1921,15 @@ static int blurayControl(demux_t *p_demux, int query, va_list args)
         else if (meta->thumb_count > 0 && meta->thumbnails && p_sys->psz_bd_path) {
             char *psz_thumbpath;
             if (asprintf(&psz_thumbpath, "%s" DIR_SEP "BDMV" DIR_SEP "META" DIR_SEP "DL" DIR_SEP "%s",
-                          p_sys->psz_bd_path, meta->thumbnails[0].path) > 0) {
+                          p_sys->psz_bd_path, meta->thumbnails[0].path) > -1) {
                 char *psz_thumburl = vlc_path2uri(psz_thumbpath, "file");
-                if (unlikely(psz_thumburl == NULL)) {
-                    free(psz_thumbpath);
+                free(psz_thumbpath);
+                if (unlikely(psz_thumburl == NULL))
                     return VLC_ENOMEM;
-                }
 
                 vlc_meta_SetArtURL(p_meta, psz_thumburl);
                 free(psz_thumburl);
             }
-            free(psz_thumbpath);
         }
 
         return VLC_SUCCESS;

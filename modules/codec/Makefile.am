@@ -317,6 +317,7 @@ EXTRA_LTLIBRARIES += liboggspots_plugin.la
 codec_LTLIBRARIES += $(LTLIBoggspots)
 
 libvideotoolbox_plugin_la_SOURCES = video_chroma/copy.c video_chroma/copy.h \
+	codec/vt_utils.c codec/vt_utils.h \
 	codec/videotoolbox.m codec/hxxx_helper.c codec/hxxx_helper.h \
 	packetizer/hxxx_nal.h packetizer/hxxx_nal.c \
 	packetizer/hxxx_sei.h packetizer/hxxx_sei.c \
@@ -374,19 +375,23 @@ endif
 ### avcodec hardware acceleration ###
 
 libvaapi_drm_plugin_la_SOURCES = \
-	video_chroma/copy.c video_chroma/copy.h \
-	codec/avcodec/vaapi.c
+	codec/avcodec/vaapi.c hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
 libvaapi_drm_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DVLC_VA_BACKEND_DRM
 libvaapi_drm_plugin_la_CFLAGS = $(AM_CFLAGS) \
 	$(LIBVA_DRM_CFLAGS) $(AVCODEC_CFLAGS)
-libvaapi_drm_plugin_la_LIBADD = $(LIBVA_DRM_LIBS)
+libvaapi_drm_plugin_la_LIBADD = $(LIBVA_DRM_LIBS) libvlc_vaapi_instance.la
 libvaapi_x11_plugin_la_SOURCES = \
-	video_chroma/copy.c video_chroma/copy.h \
-	codec/avcodec/vaapi.c
+	codec/avcodec/vaapi.c hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
 libvaapi_x11_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DVLC_VA_BACKEND_XLIB
 libvaapi_x11_plugin_la_CFLAGS = $(AM_CFLAGS) \
 	$(LIBVA_X11_CFLAGS) $(X_CFLAGS) $(AVCODEC_CFLAGS)
-libvaapi_x11_plugin_la_LIBADD = $(LIBVA_X11_LIBS) $(X_LIBS) $(X_PRE_LIBS) -lX11
+libvaapi_x11_plugin_la_LIBADD = $(LIBVA_X11_LIBS) $(X_LIBS) $(X_PRE_LIBS) \
+	-lX11 libvlc_vaapi_instance.la
+libvaapi_dr_plugin_la_SOURCES = \
+	codec/avcodec/vaapi.c hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
+libvaapi_dr_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) -DVLC_VA_BACKEND_DR
+libvaapi_dr_plugin_la_CFLAGS = $(AM_CFLAGS) $(AVCODEC_CFLAGS)
+libvaapi_dr_plugin_la_LIBADD = $(LIBVA_LIBS) libvlc_vaapi_instance.la
 if HAVE_AVCODEC_VAAPI
 if HAVE_VAAPI_DRM
 codec_LTLIBRARIES += libvaapi_drm_plugin.la
@@ -394,10 +399,12 @@ endif
 if HAVE_VAAPI_X11
 codec_LTLIBRARIES += libvaapi_x11_plugin.la
 endif
+codec_LTLIBRARIES += libvaapi_dr_plugin.la
 endif
 
 libdxva2_plugin_la_SOURCES = \
 	codec/avcodec/dxva2.c codec/avcodec/directx_va.c codec/avcodec/directx_va.h \
+        codec/avcodec/va_surface.c codec/avcodec/va_surface.h codec/avcodec/va_surface_internal.h \
 	packetizer/h264_nal.c packetizer/h264_nal.h \
 	packetizer/hevc_nal.c packetizer/hevc_nal.h \
 	video_chroma/d3d9_fmt.h
@@ -408,6 +415,7 @@ endif
 
 libd3d11va_plugin_la_SOURCES = \
 	codec/avcodec/d3d11va.c codec/avcodec/directx_va.c codec/avcodec/directx_va.h \
+        codec/avcodec/va_surface.c codec/avcodec/va_surface.h codec/avcodec/va_surface_internal.h \
 	video_chroma/d3d11_fmt.h video_chroma/dxgi_fmt.c video_chroma/dxgi_fmt.h \
 	packetizer/h264_nal.c packetizer/h264_nal.h \
 	packetizer/hevc_nal.c packetizer/hevc_nal.h

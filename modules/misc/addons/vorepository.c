@@ -44,7 +44,6 @@
 
 static int   Open ( vlc_object_t * );
 static void  Close ( vlc_object_t * );
-static int   Find ( addons_finder_t *p_finder );
 static int   Retrieve ( addons_finder_t *p_finder, addon_entry_t *p_entry );
 static int   OpenDesignated ( vlc_object_t * );
 static int   FindDesignated ( addons_finder_t *p_finder );
@@ -89,7 +88,7 @@ static int ParseManifest( addons_finder_t *p_finder, addon_entry_t *p_entry,
     const char *attr, *value;
 
     /* temp reading */
-    const char *psz_filename = NULL;
+    char *psz_filename = NULL;
     int i_filetype = -1;
 
     xml_reader_t *p_xml_reader = xml_ReaderCreate( p_finder, p_stream );
@@ -150,7 +149,7 @@ static int ParseManifest( addons_finder_t *p_finder, addon_entry_t *p_entry,
             if ( data_pointer.e_type == TYPE_STRING )
             {
                 if( data_pointer.u_data.ppsz )
-                    free( data_pointer.u_data.ppsz );
+                    free( *data_pointer.u_data.ppsz );
                 *data_pointer.u_data.ppsz = strdup( p_node );
             }
             else
@@ -185,6 +184,7 @@ static int ParseManifest( addons_finder_t *p_finder, addon_entry_t *p_entry,
                     }
                 }
                 /* reset temp */
+                free( psz_filename );
                 psz_filename = NULL;
                 i_filetype = -1;
             }

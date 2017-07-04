@@ -47,7 +47,9 @@
 
 #include <windows.h>
 #include <d3d9.h>
+#ifdef HAVE_D3DX9EFFECT_H
 #include <d3dx9effect.h>
+#endif
 #include "../../video_chroma/d3d9_fmt.h"
 
 #include "common.h"
@@ -305,7 +307,7 @@ static int Open(vlc_object_t *object)
 
     /* Fix state in case of desktop mode */
     if (sys->sys.use_desktop && vd->cfg->is_fullscreen)
-        vout_display_SendEventFullscreen(vd, false);
+        vout_display_SendEventFullscreen(vd, false, false);
 
     return VLC_SUCCESS;
 error:
@@ -465,6 +467,23 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
      * wrapper, we can't */
     if ( !is_d3d9_opaque(picture->format.i_chroma) )
         Direct3D9UnlockSurface(picture);
+    else if (picture->context)
+    {
+        const struct va_pic_context *pic_ctx = (struct va_pic_context*)picture->context;
+        if (pic_ctx->picsys.surface != picture->p_sys->surface)
+        {
+            HRESULT hr;
+            RECT visibleSource;
+            visibleSource.left = 0;
+            visibleSource.top = 0;
+            visibleSource.right = picture->format.i_visible_width;
+            visibleSource.bottom = picture->format.i_visible_height;
+            hr = IDirect3DDevice9_StretchRect( sys->d3ddev, pic_ctx->picsys.surface, &visibleSource, surface, &visibleSource, D3DTEXF_NONE);
+            if (FAILED(hr)) {
+                msg_Err(vd, "Failed to copy the hw surface to the decoder surface (hr=0x%0lx)", hr );
+            }
+        }
+    }
 
     /* check if device is still available */
     HRESULT hr = IDirect3DDevice9_TestCooperativeLevel(sys->d3ddev);
@@ -598,13 +617,13 @@ static int ControlReopenDevice(vout_display_t *vd)
     if (sys->sys.use_desktop) {
         /* Disable fullscreen/on_top while using desktop */
         if (sys->desktop_save.is_fullscreen)
-            vout_display_SendEventFullscreen(vd, false);
+            vout_display_SendEventFullscreen(vd, false, false);
         if (sys->desktop_save.is_on_top)
             vout_display_SendWindowState(vd, VOUT_WINDOW_STATE_NORMAL);
     } else {
         /* Restore fullscreen/on_top */
         if (sys->desktop_save.is_fullscreen)
-            vout_display_SendEventFullscreen(vd, true);
+            vout_display_SendEventFullscreen(vd, true, false);
         if (sys->desktop_save.is_on_top)
             vout_display_SendWindowState(vd, VOUT_WINDOW_STATE_ABOVE);
     }
@@ -814,9 +833,9 @@ static int Direct3D9FillPresentationParameters(vout_display_t *vd)
     d3dpp->Windowed               = TRUE;
     d3dpp->hDeviceWindow          = vd->sys->sys.hvideownd;
     d3dpp->BackBufferWidth        = __MAX((unsigned int)GetSystemMetrics(SM_CXVIRTUALSCREEN),
-                                          d3ddm.Width);
+                                          vd->source.i_width);
     d3dpp->BackBufferHeight       = __MAX((unsigned int)GetSystemMetrics(SM_CYVIRTUALSCREEN),
-                                          d3ddm.Height);
+                                          vd->source.i_height);
     d3dpp->SwapEffect             = D3DSWAPEFFECT_COPY;
     d3dpp->MultiSampleType        = D3DMULTISAMPLE_NONE;
     d3dpp->PresentationInterval   = D3DPRESENT_INTERVAL_DEFAULT;
@@ -1276,6 +1295,7 @@ static void Direct3D9DestroyScene(vout_display_t *vd)
 
 static int Direct3D9CompileShader(vout_display_t *vd, const char *shader_source, size_t source_length)
 {
+#ifdef HAVE_D3DX9EFFECT_H
     vout_display_sys_t *sys = vd->sys;
 
     HRESULT (WINAPI * OurD3DXCompileShader)(
@@ -1326,6 +1346,9 @@ static int Direct3D9CompileShader(vout_display_t *vd, const char *shader_source,
         return VLC_EGENERIC;
     }
     return VLC_SUCCESS;
+#else
+    return VLC_EGENERIC;
+#endif
 }
 
 #define MAX_SHADER_FILE_SIZE 1024*1024
@@ -1566,7 +1589,9 @@ static int Direct3D9ImportPicture(vout_display_t *vd,
     // When copying the entire buffer, the margin end up being blended in the actual picture
     // on nVidia (regardless of even/odd dimensions)
     if ( copy_rect.right & 1 ) copy_rect.right++;
+    if ( copy_rect.left & 1 ) copy_rect.left--;
     if ( copy_rect.bottom & 1 ) copy_rect.bottom++;
+    if ( copy_rect.top & 1 ) copy_rect.top--;
     hr = IDirect3DDevice9_StretchRect(sys->d3ddev, source, &copy_rect, destination,
                                       &copy_rect, D3DTEXF_NONE);
     IDirect3DSurface9_Release(destination);

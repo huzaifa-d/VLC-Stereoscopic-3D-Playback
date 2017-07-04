@@ -13,13 +13,34 @@ if HAVE_ANDROID
 OPENGL_COMMONSOURCES += video_output/opengl/converter_android.c
 endif
 if HAVE_OSX
-OPENGL_COMMONSOURCES += video_output/opengl/converter_cvpx.c
+OPENGL_COMMONSOURCES += video_output/opengl/converter_cvpx.c \
+	codec/vt_utils.c codec/vt_utils.h
 OPENGL_COMMONCFLAGS += -DVLCGL_CONV_CVPX
 OPENGL_COMMONLDFLAGS += -Wl,-framework,IOSurface -Wl,-framework,CoreVideo
 endif
 if HAVE_IOS
 OPENGL_COMMONSOURCES += video_output/opengl/converter_cvpx.c
 OPENGL_COMMONCFLAGS += -DVLCGL_CONV_CVPX
+endif
+if HAVE_EGL
+if HAVE_VAAPI
+OPENGL_COMMONLIBS += $(LIBVA_LIBS) $(LIBVA_EGL_LIBS) libvlc_vaapi_instance.la
+OPENGL_COMMONSOURCES += video_output/opengl/converter_vaapi.c \
+	hw/vaapi/vlc_vaapi.c hw/vaapi/vlc_vaapi.h
+OPENGL_COMMONCFLAGS += -DVLCGL_CONV_VA
+if HAVE_WAYLAND_EGL
+if HAVE_VAAPI_WL
+OPENGL_COMMONLIBS += $(LIBVA_WL_LIBS)
+OPENGL_COMMONCFLAGS += -DHAVE_VA_WL
+endif
+endif
+if HAVE_VAAPI_X11
+if HAVE_XCB
+OPENGL_COMMONLIBS += $(LIBVA_X11_LIBS) $(X_LIBS) $(X_PRE_LIBS) -lX11
+OPENGL_COMMONCFLAGS += -DHAVE_VA_X11
+endif
+endif
+endif
 endif
 
 if HAVE_DECKLINK
@@ -206,6 +227,7 @@ endif
 
 ### Win32 ###
 libdirect3d9_plugin_la_SOURCES = video_output/win32/direct3d9.c \
+	video_chroma/copy.c video_chroma/copy.h \
 	video_output/win32/common.c video_output/win32/common.h \
 	video_output/win32/events.c video_output/win32/events.h \
 	video_output/win32/builtin_shaders.h \
@@ -215,19 +237,25 @@ libdirect3d9_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
 	-DMODULE_NAME_IS_direct3d9
 libdirect3d9_plugin_la_LIBADD = -lgdi32 $(LIBCOM) -luuid
 libdirect3d9_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
-libdxva2_deinterlace_plugin_la_SOURCES = video_output/win32/dxva2_deinterlace.c \
-	video_chroma/d3d9_fmt.h
-libdxva2_deinterlace_plugin_la_LIBADD = $(LIBCOM)
-libdxva2_deinterlace_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+libdirect3d9_deinterlace_plugin_la_SOURCES = video_output/win32/dxva2_deinterlace.c \
+        video_filter/deinterlace/common.c video_filter/deinterlace/common.h \
+        video_chroma/d3d9_fmt.h
+libdirect3d9_deinterlace_plugin_la_LIBADD = $(LIBCOM)
+libdirect3d9_deinterlace_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+libdirect3d9_adjust_plugin_la_SOURCES = video_output/win32/d3d9_adjust.c \
+  video_chroma/dxgi_fmt.c video_chroma/dxgi_fmt.h
+libdirect3d9_adjust_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+libdirect3d9_adjust_plugin_la_LIBADD = $(LIBCOM)
 if HAVE_WIN32_DESKTOP
 vout_LTLIBRARIES += $(LTLIBdirect3d9)
-vout_LTLIBRARIES += $(LTLIBdxva2_deinterlace)
-EXTRA_LTLIBRARIES += libdirect3d9_plugin.la libdxva2_deinterlace_plugin.la
+video_filter_LTLIBRARIES += $(LTLIBdirect3d9_deinterlace) $(LTLIBdirect3d9_adjust)
+EXTRA_LTLIBRARIES += libdirect3d9_plugin.la libdirect3d9_deinterlace_plugin.la libdirect3d9_adjust_plugin.la
 endif
 
 libdirect3d11_plugin_la_SOURCES = video_output/win32/direct3d11.c \
  video_chroma/d3d11_fmt.h video_chroma/dxgi_fmt.c video_chroma/dxgi_fmt.h \
- video_output/win32/common.c video_output/win32/common.h
+ video_output/win32/common.c video_output/win32/common.h \
+ video_chroma/copy.c video_chroma/copy.h
 libdirect3d11_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
  -DMODULE_NAME_IS_direct3d11
 if !HAVE_WINSTORE
@@ -243,13 +271,18 @@ vout_LTLIBRARIES += $(LTLIBdirect3d11)
 EXTRA_LTLIBRARIES += libdirect3d11_plugin.la
 
 libdirect3d11_deinterlace_plugin_la_SOURCES = video_output/win32/d3d11_deinterlace.c \
+  video_filter/deinterlace/common.c video_filter/deinterlace/common.h \
   video_chroma/dxgi_fmt.c video_chroma/dxgi_fmt.h
 libdirect3d11_deinterlace_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
-vout_LTLIBRARIES += $(LTLIBdirect3d11_deinterlace)
-EXTRA_LTLIBRARIES += libdirect3d11_deinterlace_plugin.la
+libdirect3d11_adjust_plugin_la_SOURCES = video_output/win32/d3d11_adjust.c \
+  video_chroma/dxgi_fmt.c video_chroma/dxgi_fmt.h
+libdirect3d11_adjust_plugin_la_LDFLAGS = $(AM_LDFLAGS) -rpath '$(voutdir)'
+video_filter_LTLIBRARIES += $(LTLIBdirect3d11_deinterlace) $(LTLIBdirect3d11_adjust)
+EXTRA_LTLIBRARIES += libdirect3d11_deinterlace_plugin.la libdirect3d11_adjust_plugin.la
 
 libdirectdraw_plugin_la_SOURCES = video_output/win32/directdraw.c \
 	video_output/win32/common.c video_output/win32/common.h \
+	video_chroma/copy.c video_chroma/copy.h \
 	video_output/win32/events.c video_output/win32/events.h \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libdirectdraw_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \
@@ -264,6 +297,7 @@ endif
 libglwin32_plugin_la_SOURCES = $(OPENGL_COMMONSOURCES) \
 	video_output/win32/glwin32.c \
 	video_output/win32/common.c video_output/win32/common.h \
+	video_chroma/copy.c video_chroma/copy.h \
 	video_output/win32/events.c video_output/win32/events.h \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libwgl_plugin_la_SOURCES = video_output/win32/wgl.c $(OPENGL_COMMONSOURCES)
@@ -288,6 +322,7 @@ endif
 
 libwingdi_plugin_la_SOURCES = video_output/win32/wingdi.c \
 	video_output/win32/common.c video_output/win32/common.h \
+	video_chroma/copy.c video_chroma/copy.h \
 	video_output/win32/events.c video_output/win32/events.h \
 	video_output/win32/win32touch.c video_output/win32/win32touch.h
 libwingdi_plugin_la_CPPFLAGS = $(AM_CPPFLAGS) \

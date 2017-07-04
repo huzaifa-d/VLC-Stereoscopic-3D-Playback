@@ -19,7 +19,7 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/VLCAddonsWindowController.h gui/macosx/VLCAddonsWindowController.m \
 	gui/macosx/applescript.h gui/macosx/applescript.m \
 	gui/macosx/AppleRemote.h gui/macosx/AppleRemote.m \
-	gui/macosx/CompatibilityFixes.h \
+	gui/macosx/CompatibilityFixes.h gui/macosx/CompatibilityFixes.m \
 	gui/macosx/VLCControlsBarCommon.m gui/macosx/VLCControlsBarCommon.h \
 	gui/macosx/VLCDocumentController.m gui/macosx/VLCDocumentController.h \
 	gui/macosx/VLCMainWindowControlsBar.m gui/macosx/VLCMainWindowControlsBar.h \
@@ -75,13 +75,19 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/VLCHUDSliderCell.h gui/macosx/VLCHUDSliderCell.m \
 	gui/macosx/VLCHUDButtonCell.h gui/macosx/VLCHUDButtonCell.m \
 	gui/macosx/VLCHUDCheckboxCell.h gui/macosx/VLCHUDCheckboxCell.m \
-	gui/macosx/VLCHUDRadiobuttonCell.h gui/macosx/VLCHUDRadiobuttonCell.m \
 	gui/macosx/VLCHUDTextFieldCell.h gui/macosx/VLCHUDTextFieldCell.m \
+	gui/macosx/VLCHUDScroller.h gui/macosx/VLCHUDScroller.m \
+	gui/macosx/VLCHUDOutlineView.h gui/macosx/VLCHUDOutlineView.m \
+	gui/macosx/VLCHUDTableView.h gui/macosx/VLCHUDTableView.m \
+	gui/macosx/VLCHUDTableCornerView.h gui/macosx/VLCHUDTableCornerView.m \
+	gui/macosx/VLCHUDSegmentedCell.h gui/macosx/VLCHUDSegmentedCell.m \
+	gui/macosx/VLCHUDStepperCell.h gui/macosx/VLCHUDStepperCell.m \
+	gui/macosx/VLCHUDPopUpButtonCell.h gui/macosx/VLCHUDPopUpButtonCell.m \
 	gui/macosx/VLCInputManager.h gui/macosx/VLCInputManager.m \
 	gui/macosx/VLCMainWindow.h gui/macosx/VLCMainWindow.m \
 	gui/macosx/VLCRendererDiscovery.h gui/macosx/VLCRendererDiscovery.m \
 	gui/macosx/VLCRendererItem.h gui/macosx/VLCRendererItem.m \
-	gui/macosx/VLCRendererDialog.h gui/macosx/VLCRendererDialog.m \
+	gui/macosx/VLCRendererMenuController.h gui/macosx/VLCRendererMenuController.m \
 	gui/macosx/VLCResumeDialogController.h gui/macosx/VLCResumeDialogController.m \
 	gui/macosx/VLCTrackSynchronizationWindowController.h gui/macosx/VLCTrackSynchronizationWindowController.m \
 	gui/macosx/VLCVideoEffectsWindowController.h gui/macosx/VLCVideoEffectsWindowController.m \
@@ -89,8 +95,10 @@ libmacosx_plugin_la_SOURCES = \
 	gui/macosx/VLCFSPanelDraggableView.h gui/macosx/VLCFSPanelDraggableView.m \
 	gui/macosx/VLCDefaultValueSlider.h gui/macosx/VLCDefaultValueSlider.m \
 	gui/macosx/VLCDefaultValueSliderCell.h gui/macosx/VLCDefaultValueSliderCell.m \
-	gui/macosx/VLCHUDImageButton.h gui/macosx/VLCHUDImageButton.m \
-	gui/macosx/VLCHUDToggleButton.h gui/macosx/VLCHUDToggleButton.m
+	gui/macosx/VLCImageButton.h gui/macosx/VLCImageButton.m \
+	gui/macosx/VLCTintedImageButtonCell.h gui/macosx/VLCTintedImageButtonCell.m \
+	gui/macosx/VLCTimeField.h gui/macosx/VLCTimeField.m \
+	gui/macosx/VLCHexNumberFormatter.h gui/macosx/VLCHexNumberFormatter.m
 
 # User interface compilation
 
@@ -782,7 +790,5 @@ libmacosx_plugin_la_RES += \
 	gui/macosx/Resources/vlc.scriptSuite \
 	gui/macosx/Resources/vlc.scriptTerminology
 
-EXTRA_DIST += $(libmacosx_plugin_la_RES)
-
-
+dist_libmacosx_plugin_la_DATA = $(libmacosx_plugin_la_RES)
 libmacosx_plugin_ladir = $(prefix)/share/macosx/Contents/Resources

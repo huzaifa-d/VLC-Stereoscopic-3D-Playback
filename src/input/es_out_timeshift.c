@@ -717,15 +717,15 @@ static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
     {
         return ControlLockedSetFrameNext( p_out );
     }
+
     case ES_OUT_GET_PCR_SYSTEM:
-    {
         if( p_sys->b_delayed )
             return VLC_EGENERIC;
+        /* fall through */
+    case ES_OUT_GET_GROUP_FORCED:
+    case ES_OUT_POST_SUBNODE:
+        return es_out_vaControl( p_sys->p_out, i_query, args );
 
-        mtime_t *pi_system = (mtime_t*)va_arg( args, mtime_t * );
-        mtime_t *pi_delay  = (mtime_t*)va_arg( args, mtime_t * );
-        return es_out_ControlGetPcrSystem( p_sys->p_out, pi_system, pi_delay );
-    }
     case ES_OUT_MODIFY_PCR_SYSTEM:
     {
         const bool    b_absolute = va_arg( args, int );
@@ -736,15 +736,7 @@ static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
 
         return es_out_ControlModifyPcrSystem( p_sys->p_out, b_absolute, i_system );
     }
-    case ES_OUT_GET_GROUP_FORCED:
-    {
-        int *pi_group = va_arg( args, int * );
-        return es_out_Control( p_sys->p_out, ES_OUT_GET_GROUP_FORCED, pi_group );
-    }
 
-    default:
-        msg_Err( p_sys->p_input, "Unknown es_out_Control query !" );
-        // ft
     /* Invalid queries for this es_out level */
     case ES_OUT_SET_ES_BY_ID:
     case ES_OUT_RESTART_ES_BY_ID:
@@ -752,6 +744,7 @@ static int ControlLocked( es_out_t *p_out, int i_query, va_list args )
     case ES_OUT_GET_ES_OBJECTS_BY_ID:
     case ES_OUT_SET_DELAY:
     case ES_OUT_SET_RECORD_STATE:
+    default:
         vlc_assert_unreachable();
         return VLC_EGENERIC;
     }
@@ -1639,8 +1632,6 @@ static void CmdCleanControl( ts_cmd_t *p_cmd )
             es_format_Clean( p_cmd->u.control.u.es_fmt.p_fmt );
             free( p_cmd->u.control.u.es_fmt.p_fmt );
         }
-        // ft
-    default:
         break;
     }
 }

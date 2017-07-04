@@ -362,12 +362,12 @@ static const char * const  ppsz_deinterlace_text[] = {
 #define DEINTERLACE_MODE_LONGTEXT N_( \
     "Deinterlace method to use for video processing.")
 static const char * const ppsz_deinterlace_mode[] = {
-    "discard", "blend", "mean", "bob",
+    "auto", "discard", "blend", "mean", "bob",
     "linear", "x", "yadif", "yadif2x", "phosphor",
     "ivtc"
 };
 static const char * const ppsz_deinterlace_mode_text[] = {
-    N_("Discard"), N_("Blend"), N_("Mean"), N_("Bob"),
+    N_("Auto"), N_("Discard"), N_("Blend"), N_("Mean"), N_("Bob"),
     N_("Linear"), "X", "Yadif", "Yadif (2x)", N_("Phosphor"),
     N_("Film NTSC (IVTC)")
 };
@@ -1070,23 +1070,12 @@ static const char *const ppsz_prefres[] = {
        "Writes process id into specified file.")
 
 #define ONEINSTANCE_TEXT N_("Allow only one running instance")
-#if defined( _WIN32 ) || defined( __OS2__ )
 #define ONEINSTANCE_LONGTEXT N_( \
     "Allowing only one running instance of VLC can sometimes be useful, " \
     "for example if you associated VLC with some media types and you " \
     "don't want a new instance of VLC to be opened each time you " \
     "open a file in your file manager. This option will allow you " \
     "to play the file with the already running instance or enqueue it.")
-#elif defined( HAVE_DBUS )
-#define ONEINSTANCE_LONGTEXT N_( \
-    "Allowing only one running instance of VLC can sometimes be useful, " \
-    "for example if you associated VLC with some media types and you " \
-    "don't want a new instance of VLC to be opened each time you " \
-    "open a file in your file manager. This option will allow you " \
-    "to play the file with the already running instance or enqueue it. " \
-    "This option requires the D-Bus session daemon to be active " \
-    "and the running instance of VLC to use D-Bus control interface.")
-#endif
 
 #define STARTEDFROMFILE_TEXT N_("VLC is started from file association")
 #define STARTEDFROMFILE_LONGTEXT N_( \
@@ -1109,6 +1098,10 @@ static const char *const ppsz_prefres[] = {
 #define PLAYLISTENQUEUE_LONGTEXT N_( \
     "When using the one instance only option, enqueue items to playlist " \
     "and keep playing current item.")
+
+#define DBUS_TEXT N_("Expose media player via D-Bus")
+#define DBUS_LONGTEXT N_("Allow other applications to control " \
+    "the VLC media player using the D-Bus MPRIS protocol.")
 
 /*****************************************************************************
  * Playlist
@@ -1636,7 +1629,7 @@ vlc_module_begin ()
                  DEINTERLACE_TEXT, DEINTERLACE_LONGTEXT, false )
         change_integer_list( pi_deinterlace, ppsz_deinterlace_text )
         change_safe()
-    add_string( "deinterlace-mode", "blend",
+    add_string( "deinterlace-mode", "auto",
                 DEINTERLACE_MODE_TEXT, DEINTERLACE_MODE_LONGTEXT, false )
         change_string_list( ppsz_deinterlace_mode, ppsz_deinterlace_mode_text )
         change_safe()
@@ -2067,6 +2060,9 @@ vlc_module_begin ()
               ONEINSTANCEWHENSTARTEDFROMFILE_TEXT, true )
     add_bool( "playlist-enqueue", 0, PLAYLISTENQUEUE_TEXT,
               PLAYLISTENQUEUE_LONGTEXT, true )
+#endif
+#ifdef HAVE_DBUS
+    add_bool( "dbus", false, DBUS_TEXT, DBUS_LONGTEXT, true )
 #endif
     add_bool( "media-library", 0, ML_TEXT, ML_LONGTEXT, false )
     add_bool( "playlist-tree", 0, PLTREE_TEXT, PLTREE_LONGTEXT, false )

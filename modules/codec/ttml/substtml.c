@@ -460,7 +460,13 @@ static void DictMergeWithRegionID( ttml_context_t *p_ctx, const char *psz_id,
         if( !p_regionnode )
             return;
 
-        /* First fill with style elements */
+        DictionaryMerge( &p_regionnode->attr_dict, p_dst );
+
+        const char *psz_styleid = (const char *)
+                vlc_dictionary_value_for_key( &p_regionnode->attr_dict, "style" );
+        if( psz_styleid )
+            DictMergeWithStyleID( p_ctx, psz_styleid, p_dst );
+
         for( const tt_basenode_t *p_child = p_regionnode->p_child;
                                   p_child; p_child = p_child->p_next )
         {
@@ -473,9 +479,6 @@ static void DictMergeWithRegionID( ttml_context_t *p_ctx, const char *psz_id,
                 DictionaryMerge( &p_node->attr_dict, p_dst );
             }
         }
-
-        /* Merge region attributes */
-        DictionaryMerge( &p_regionnode->attr_dict, p_dst );
     }
 }
 
@@ -516,7 +519,7 @@ static ttml_style_t * InheritTTMLStyles( ttml_context_t *p_ctx, tt_node_t *p_nod
             DictMergeWithRegionID( p_ctx, psz_regionid, &merged );
     }
 
-    if( vlc_dictionary_keys_count( &merged ) && (p_ttml_style = ttml_style_New()) )
+    if( !vlc_dictionary_is_empty( &merged ) && (p_ttml_style = ttml_style_New()) )
     {
         DictToTTMLStyle( &merged, p_ttml_style );
     }

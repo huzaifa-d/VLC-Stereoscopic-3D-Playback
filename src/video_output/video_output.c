@@ -46,12 +46,14 @@
 #include <vlc_spu.h>
 #include <vlc_vout_osd.h>
 #include <vlc_image.h>
+#include <vlc_plugin.h>
 
 #include <libvlc.h>
 #include "vout_internal.h"
 #include "interlacing.h"
 #include "display.h"
 #include "window.h"
+#include "../misc/variables.h"
 
 /*****************************************************************************
  * Local prototypes
@@ -148,7 +150,7 @@ static vout_thread_t *VoutCreate(vlc_object_t *object,
     vout_IntfInit(vout);
 
     /* Initialize subpicture unit */
-    vout->p->spu = spu_Create(vout);
+    vout->p->spu = spu_Create(vout, vout);
 
     vout->p->title.show     = var_InheritBool(vout, "video-title-show");
     vout->p->title.timeout  = var_InheritInteger(vout, "video-title-timeout");
@@ -378,7 +380,7 @@ void vout_PutSubpicture( vout_thread_t *vout, subpicture_t *subpic )
 }
 int vout_RegisterSubpictureChannel( vout_thread_t *vout )
 {
-    int channel = SPU_DEFAULT_CHANNEL;
+    int channel = VOUT_SPU_CHANNEL_AVAIL_FIRST;
 
     vlc_mutex_lock(&vout->p->spu_lock);
     if (vout->p->spu)
@@ -653,6 +655,29 @@ int vout_HideWindowMouse(vout_thread_t *vout, bool hide)
 }
 
 /* */
+static int FilterRestartCallback(vlc_object_t *p_this, char const *psz_var,
+                                 vlc_value_t oldval, vlc_value_t newval,
+                                 void *p_data)
+{
+    (void) p_this; (void) psz_var; (void) oldval; (void) newval;
+    vout_ControlChangeFilters((vout_thread_t *)p_data, NULL);
+    return 0;
+}
+
+static int ThreadDelFilterCallbacks(filter_t *filter, void *opaque)
+{
+    filter_DelProxyCallbacks((vlc_object_t *)opaque, filter,
+                             FilterRestartCallback);
+    return VLC_SUCCESS;
+}
+
+static void ThreadDelAllFilterCallbacks(vout_thread_t *vout)
+{
+    assert(vout->p->filter.chain_interactive != NULL);
+    filter_chain_ForEach(vout->p->filter.chain_interactive,
+                         ThreadDelFilterCallbacks, vout);
+}
+
 static picture_t *VoutVideoFilterInteractiveNewPicture(filter_t *filter)
 {
     vout_thread_t *vout = filter->owner.sys;
@@ -706,6 +731,7 @@ static void ThreadChangeFilters(vout_thread_t *vout,
                                 bool is_locked)
 {
     ThreadFilterFlush(vout, is_locked);
+    ThreadDelAllFilterCallbacks(vout);
 
     vlc_array_t array_static;
     vlc_array_t array_interactive;
@@ -774,10 +800,16 @@ static void ThreadChangeFilters(vout_thread_t *vout,
         for (size_t i = 0; i < vlc_array_count(array); i++) {
             vout_filter_t *e = vlc_array_item_at_index(array, i);
             msg_Dbg(vout, "Adding '%s' as %s", e->name, a == 0 ? "static" : "interactive");
-            if (!filter_chain_AppendFilter(chain, e->name, e->cfg, NULL, NULL)) {
+            filter_t *filter = filter_chain_AppendFilter(chain, e->name, e->cfg,
+                               NULL, NULL);
+            if (!filter)
+            {
                 msg_Err(vout, "Failed to add filter '%s'", e->name);
                 config_ChainDestroy(e->cfg);
             }
+            else if (a == 1) /* Add callbacks for interactive filters */
+                filter_AddProxyCallbacks(vout, filter, FilterRestartCallback);
+
             free(e->name);
             free(e);
         }
@@ -790,6 +822,7 @@ static void ThreadChangeFilters(vout_thread_t *vout,
         if (filter_chain_AppendConverter(vout->p->filter.chain_interactive,
                                          &fmt_current, &fmt_target) != 0) {
             msg_Err(vout, "Failed to compensate for the format changes, removing all filters");
+            ThreadDelAllFilterCallbacks(vout);
             filter_chain_Reset(vout->p->filter.chain_static,      &fmt_target, &fmt_target);
             filter_chain_Reset(vout->p->filter.chain_interactive, &fmt_target, &fmt_target);
         }
@@ -1158,7 +1191,7 @@ static void ThreadDisplayOsdTitle(vout_thread_t *vout, const char *string)
     if (!vout->p->title.show)
         return;
 
-    vout_OSDText(vout, SPU_DEFAULT_CHANNEL,
+    vout_OSDText(vout, VOUT_SPU_CHANNEL_OSD,
                  vout->p->title.position, INT64_C(1000) * vout->p->title.timeout,
                  string);
 }
@@ -1249,12 +1282,12 @@ static void ThreadChangeFullscreen(vout_thread_t *vout, bool fullscreen)
 {
     vout_window_t *window = vout->p->window;
 
-    if (window != NULL)
-        vout_window_SetFullScreen(window, fullscreen);
-    else
+    bool window_fullscreen = false;
+    if (window != NULL
+     && vout_window_SetFullScreen(window, fullscreen) == VLC_SUCCESS)
+        window_fullscreen = true;
     if (vout->p->display.vd != NULL)
-        vout_display_SendEvent(vout->p->display.vd,
-                               VOUT_DISPLAY_EVENT_FULLSCREEN, fullscreen);
+        vout_display_SendEventFullscreen(vout->p->display.vd, fullscreen, window_fullscreen);
 }
 
 static void ThreadChangeWindowState(vout_thread_t *vout, unsigned state)
@@ -1266,8 +1299,7 @@ static void ThreadChangeWindowState(vout_thread_t *vout, unsigned state)
 #if defined(_WIN32) || defined(__OS2__)
     else /* FIXME: remove this event */
     if (vout->p->display.vd != NULL)
-        vout_display_SendEvent(vout->p->display.vd,
-                               VOUT_DISPLAY_EVENT_WINDOW_STATE, state);
+        vout_display_SendWindowState(vout->p->display.vd, state);
 #endif
 }
 
@@ -1439,7 +1471,10 @@ static int ThreadStart(vout_thread_t *vout, vout_display_state_t *state)
     return VLC_SUCCESS;
 error:
     if (vout->p->filter.chain_interactive != NULL)
+    {
+        ThreadDelAllFilterCallbacks(vout);
         filter_chain_Delete(vout->p->filter.chain_interactive);
+    }
     if (vout->p->filter.chain_static != NULL)
         filter_chain_Delete(vout->p->filter.chain_static);
     video_format_Clean(&vout->p->filter.format);
@@ -1462,7 +1497,8 @@ static void ThreadStop(vout_thread_t *vout, vout_display_state_t *state)
         vout_CloseWrapper(vout, state);
     }
 
-    /* Destroy the video filters2 */
+    /* Destroy the video filters */
+    ThreadDelAllFilterCallbacks(vout);
     filter_chain_Delete(vout->p->filter.chain_interactive);
     filter_chain_Delete(vout->p->filter.chain_static);
     video_format_Clean(&vout->p->filter.format);
@@ -1585,7 +1621,10 @@ static int ThreadControl(vout_thread_t *vout, vout_control_cmd_t cmd)
         ThreadDisplayOsdTitle(vout, cmd.u.string);
         break;
     case VOUT_CONTROL_CHANGE_FILTERS:
-        ThreadChangeFilters(vout, NULL, cmd.u.string, -1, false);
+        ThreadChangeFilters(vout, NULL,
+                            cmd.u.string != NULL ?
+                            cmd.u.string : vout->p->filter.configuration,
+                            -1, false);
         break;
     case VOUT_CONTROL_CHANGE_INTERLACE:
         ThreadChangeFilters(vout, NULL, vout->p->filter.configuration,

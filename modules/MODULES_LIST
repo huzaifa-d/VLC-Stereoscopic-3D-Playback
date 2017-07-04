@@ -85,7 +85,7 @@ $Id$
  * croppadd: Crop/Padd image filter
  * crystalhd: crystalhd decoder
  * cvdsub: CVD subtitles decoder
- * cvpx_i420: filter to copy from OS X accelerated surfaces to CPU in YUV
+ * cvpx: filter to copy from OS X accelerated surfaces to CPU
  * d3d11_surface: Convert D3D11 GPU textures to YUV planes
  * d3d11va: Direct3D11 hardware-accelerated decoding
  * daala: a daala video decoder/packetizer using libdaala
@@ -105,8 +105,11 @@ $Id$
  * demuxdump: Pseudo-demuxer that dumps the stream
  * diracsys: BBC Dirac demuxer
  * direct3d11: video output module using the Direct3D11 API
+ * direct3d11_adjust: adjust filter for Direct3D11 video decoding
  * direct3d11_deinterlace: deinterlacer for Direct3D11 video decoding
  * direct3d9: video output module using the Direct3D9 API
+ * direct3d9_adjust: adjust filter for Direct3D9 video decoding
+ * direct3d9_deinterlace: deinterlacer for Direct3D9/DxVA video decoding
  * directdraw: video output module using the DirectDraw API
  * directfb: Direct Framebuffer video output
  * directsound: audio output module using the DirectSound API
@@ -124,7 +127,6 @@ $Id$
  * dvdread: input module for accessing DVDs, uses libdvdread
  * dxa9: Convert D3D9 GPU textures to YUV planes
  * dxva2: DxVA2 hardware-accelerated decoding
- * dxva2_deinterlace: deinterlacer for DxVA 2.0 video decoding
  * dynamicoverlay: subpicture filter using shared memory that can be written to by external applications
  * edgedetection: edge detection video filter
  * edummy: dummy encoder
@@ -416,7 +418,10 @@ $Id$
  * uleaddvaudio: codec for DV Audio from Ulead
  * upnp: libupnp UPNP service discovery
  * v4l2: Video 4 Linux 2 input module
+ * vaapi_chroma: VAAPI chroma conversion
+ * vaapi_dr: VAAPI hardware-accelerated decoding with vout backend (direct rendering)
  * vaapi_drm: VAAPI hardware-accelerated decoding with drm backend
+ * vaapi_filters: VAAPI hardware-accelerated deinterlacing/adjust/sharpen/chroma filters
  * vaapi_x11: VAAPI hardware-accelerated decoding with x11 backend
  * vc1: VC-1 Video demuxer
  * vcd: input module for accessing Video CDs
