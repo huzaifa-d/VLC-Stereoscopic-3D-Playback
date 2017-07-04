@@ -150,7 +150,6 @@ struct vout_display_sys_t
     IDXGISwapChain1          *dxgiswapChain;   /* DXGI 1.1 swap chain */
     IDXGISwapChain4          *dxgiswapChain4;  /* DXGI 1.5 for HDR */
     ID3D11Device             *d3ddevice;       /* D3D device */
-    ID3D11Device             *d3d11device;     /* D3D 11 device */
     ID3D11DeviceContext      *d3dcontext;      /* D3D context */
     d3d_quad_t               picQuad;
     const d3d_format_t       *picQuadConfig;
@@ -902,7 +901,7 @@ static int UpdateSwapChain(vout_display_t *vd, bool convertTo2D)
        scd.Stereo = FALSE;
 
 
-    IDXGIAdapter *dxgiadapter = D3D11DeviceAdapter(sys->d3d11device);
+    IDXGIAdapter *dxgiadapter = D3D11DeviceAdapter(sys->d3ddevice);
     if (FAILED(hr)) {
        msg_Err(vd, "Could not get the DXGI Adapter");
        return VLC_EGENERIC;
@@ -945,7 +944,7 @@ static int UpdateSwapChain(vout_display_t *vd, bool convertTo2D)
     //sys->d3dregion_count = 0;
     //ReleasePictureSys(&sys->stagingSys);
 
-    hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3d11device,
+    hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3ddevice,
                                               sys->sys.hvideownd, &scd, NULL, NULL, &sys->dxgiswapChain);
     IDXGIFactory2_Release(dxgifactory);
     if (FAILED(hr)) {
@@ -1008,7 +1007,7 @@ static HRESULT UpdateBackBuffer(vout_display_t *vd)
     D3D11_RENDER_TARGET_VIEW_DESC  *p_renderTargetViewDesc;
     p_renderTargetViewDesc = &renderTargetViewDesc;
     
-    hr = ID3D11Device_CreateRenderTargetView(sys->d3d11device, (ID3D11Resource *)pBackBuffer, p_renderTargetViewDesc, &sys->d3drenderTargetView);
+    hr = ID3D11Device_CreateRenderTargetView(sys->d3ddevice, (ID3D11Resource *)pBackBuffer, p_renderTargetViewDesc, &sys->d3drenderTargetView);
 
     if (sys->stereo_enabled)
     {
@@ -1729,8 +1728,6 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
                     (void *)sys->d3ddevice, (void *)sys->d3dcontext,
                     driverAttempts[driver], i_feature_level);
 #endif
-            //Update to DirectX11.1 interface
-            ID3D11Device_QueryInterface(sys->d3ddevice, &IID_ID3D11Device, (void **)&sys->d3d11device);
 
             break;
         }
@@ -1746,7 +1743,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
         disable3D = true;
     }
 
-    IDXGIAdapter *dxgiadapter = D3D11DeviceAdapter(sys->d3d11device);
+    IDXGIAdapter *dxgiadapter = D3D11DeviceAdapter(sys->d3ddevice);
     if (FAILED(hr)) {
        msg_Err(vd, "Could not get the DXGI Adapter");
        return VLC_EGENERIC;
@@ -1794,7 +1791,7 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
         sys->turnOn2D = false;
     }
 
-    hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3d11device,
+    hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3ddevice,
                                               sys->sys.hvideownd, &scd, NULL, NULL, &sys->dxgiswapChain);
     IDXGIFactory2_Release(dxgifactory);
     if (FAILED(hr)) {
@@ -1902,11 +1899,6 @@ static void Direct3D11Close(vout_display_t *vd)
     {
         ID3D11Device_Release(sys->d3ddevice);
         sys->d3ddevice = NULL;
-    }
-    if (sys->d3d11device)
-    {
-        ID3D11Device_Release(sys->d3d11device);
-        sys->d3d11device = NULL;
     }
     if (sys->dxgiswapChain4)
     {
