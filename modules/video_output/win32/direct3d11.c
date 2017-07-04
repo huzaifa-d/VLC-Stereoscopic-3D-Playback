@@ -916,24 +916,34 @@ static int UpdateSwapChain(vout_display_t *vd, bool convertTo2D)
     }
 
     //Release references
+    if (sys->d3dcontext)
+    {
+        ID3D11DeviceContext_Flush(sys->d3dcontext);
+    }
     if (sys->dxgiswapChain4)
+    {
         IDXGISwapChain4_Release(sys->dxgiswapChain4);
+        sys->dxgiswapChain4 = NULL;
+    }
     if (sys->dxgiswapChain)
+    {
         IDXGISwapChain_Release(sys->dxgiswapChain);
+        sys->dxgiswapChain = NULL;
+    }
     if (sys->d3drenderTargetView)
     {
         ID3D11RenderTargetView_Release(sys->d3drenderTargetView);
         sys->d3drenderTargetView = NULL;
     }
-    if (sys->d3ddepthStencilView)
+    if (sys->d3drenderTargetViewRightEye)
     {
-        ID3D11DepthStencilView_Release(sys->d3ddepthStencilView);
-        sys->d3ddepthStencilView = NULL;
+        ID3D11RenderTargetView_Release(sys->d3drenderTargetViewRightEye);
+        sys->d3drenderTargetViewRightEye = NULL;
     }
-    ReleaseQuad(&sys->picQuad);
+    //ReleaseQuad(&sys->picQuad);
     //Direct3D11DeleteRegions(sys->d3dregion_count, sys->d3dregions);
     //sys->d3dregion_count = 0;
-    ReleasePictureSys(&sys->stagingSys);
+    //ReleasePictureSys(&sys->stagingSys);
 
     hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3d11device,
                                               sys->sys.hvideownd, &scd, NULL, NULL, &sys->dxgiswapChain);
@@ -1231,95 +1241,9 @@ static int Control(vout_display_t *vd, int query, va_list args)
             if (!sys->turnOn2D)
             {
                 sys->turnOn2D = true;
-                //Direct3D11Close(vd);
-                {
-                    //Direct3D11DestroyResources(vd);
-                    {
-                        vout_display_sys_t *sys = vd->sys;
-
-                        Direct3D11DestroyPool(vd);
-
-                        ReleaseQuad(&sys->picQuad);
-                        //Direct3D11DeleteRegions(sys->d3dregion_count, sys->d3dregions);
-                        //sys->d3dregion_count = 0;
-
-                        ReleasePictureSys(&sys->stagingSys);
-
-                        if (sys->flatVSShader)
-                        {
-                            ID3D11VertexShader_Release(sys->flatVSShader);
-                            sys->flatVSShader = NULL;
-                        }
-                        if (sys->projectionVSShader)
-                        {
-                            ID3D11VertexShader_Release(sys->projectionVSShader);
-                            sys->projectionVSShader = NULL;
-                        }
-                        if (sys->d3drenderTargetView)
-                        {
-                            ID3D11RenderTargetView_Release(sys->d3drenderTargetView);
-                            sys->d3drenderTargetView = NULL;
-                        }
-                        if (sys->d3drenderTargetViewRightEye)
-                        {
-                            ID3D11RenderTargetView_Release(sys->d3drenderTargetViewRightEye);
-                            sys->d3drenderTargetViewRightEye = NULL;
-                        }
-                        if (sys->d3ddepthStencilView)
-                        {
-                            ID3D11DepthStencilView_Release(sys->d3ddepthStencilView);
-                            sys->d3ddepthStencilView = NULL;
-                        }
-                        if (sys->pSPUPixelShader)
-                        {
-                            ID3D11PixelShader_Release(sys->pSPUPixelShader);
-                            sys->pSPUPixelShader = NULL;
-                        }
-                        if (sys->picQuadPixelShader)
-                        {
-                            ID3D11PixelShader_Release(sys->picQuadPixelShader);
-                            sys->picQuadPixelShader = NULL;
-                        }
-                    #if defined(HAVE_ID3D11VIDEODECODER)
-                        if( sys->context_lock != INVALID_HANDLE_VALUE )
-                        {
-                            CloseHandle( sys->context_lock );
-                            sys->context_lock = INVALID_HANDLE_VALUE;
-                        }
-                    #endif
-                    }
-                    if (sys->d3dcontext)
-                    {
-                        ID3D11DeviceContext_Flush(sys->d3dcontext);
-                        ID3D11DeviceContext_Release(sys->d3dcontext);
-                        sys->d3dcontext = NULL;
-                    }
-                    if (sys->d3ddevice)
-                    {
-                        ID3D11Device_Release(sys->d3ddevice);
-                        sys->d3ddevice = NULL;
-                    }
-                    if (sys->d3d11device)
-                    {
-                        ID3D11Device_Release(sys->d3d11device);
-                        sys->d3d11device = NULL;
-                    }
-                    if (sys->dxgiswapChain4)
-                    {
-                        IDXGISwapChain_Release(sys->dxgiswapChain4);
-                        sys->dxgiswapChain4 = NULL;
-                    }
-                    if (sys->dxgiswapChain)
-                    {
-                        IDXGISwapChain_Release(sys->dxgiswapChain);
-                        sys->dxgiswapChain = NULL;
-                    }
-
-                    msg_Dbg(vd, "Direct3D11 device adapter closed");
-                }
-                Direct3D11Open(vd, &vd->source);
-            }
-            //res = UpdateSwapChain(vd, true);
+                sys->stereo_enabled = false;
+                res = UpdateSwapChain(vd, true);
+            }            
         }
         else if (cfg->multiview_format == S3D_Auto)
         {
@@ -1327,8 +1251,8 @@ static int Control(vout_display_t *vd, int query, va_list args)
             if (sys->turnOn2D)
             {
                 sys->turnOn2D = false;
-                Direct3D11Close(vd);
-                Direct3D11Open(vd, &vd->source);
+                sys->stereo_enabled = true;
+                res = UpdateSwapChain(vd, false);
             }
         }
 //For temporary testing
@@ -1347,7 +1271,6 @@ static int Control(vout_display_t *vd, int query, va_list args)
             FreeLibrary(dxgidebug_dll);
         }
 #endif
-        //assert(res != VLC_EGENERIC);
         UpdateBackBuffer(vd);
         UpdatePicQuadPosition(vd);
         res = VLC_SUCCESS;
