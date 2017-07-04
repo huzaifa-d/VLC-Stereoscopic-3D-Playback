@@ -44,6 +44,8 @@
 #include <dxgi1_5.h>
 #include <d3dcompiler.h>
 
+# include <dxgidebug.h>
+
 /* avoided until we can pass ISwapchainPanel without c++/cx mode
 # include <windows.ui.xaml.media.dxinterop.h> */
 
@@ -58,6 +60,7 @@
 
 DEFINE_GUID(GUID_SWAPCHAIN_WIDTH,  0xf1b59347, 0x1643, 0x411a, 0xad, 0x6b, 0xc7, 0x80, 0x17, 0x7a, 0x06, 0xb6);
 DEFINE_GUID(GUID_SWAPCHAIN_HEIGHT, 0x6ea976a0, 0x9d60, 0x4bb7, 0xa5, 0xa9, 0x7d, 0xd1, 0x18, 0x7f, 0xc9, 0xbd);
+DEFINE_GUID(DXGI_DEBUG_D3D11, 0x4b99317b, 0xac39, 0x4aa6, 0xbb, 0xb, 0xba, 0xa0, 0x47, 0x84, 0x79, 0x8f);
 
 static int  Open(vlc_object_t *);
 static void Close(vlc_object_t *);
@@ -166,6 +169,7 @@ struct vout_display_sys_t
      * Uses a Texture2D with slices rather than a Texture2DArray for the decoder */
     bool                     legacy_shader;
     bool					 stereo_enabled;
+    bool                     turnOn2D;
     int                      source3DFormat;
 
     // SPU
@@ -1207,6 +1211,7 @@ static void SetQuadVSProjection(vout_display_t *vd, d3d_quad_t *quad, const vlc_
 static int Control(vout_display_t *vd, int query, va_list args)
 {
     int res = CommonControl( vd, query, args );
+     vout_display_sys_t *sys = vd->sys;
 
     if (query == VOUT_DISPLAY_CHANGE_VIEWPOINT)
     {
@@ -1221,11 +1226,128 @@ static int Control(vout_display_t *vd, int query, va_list args)
     {
         const vout_display_cfg_t *cfg = va_arg(args, const vout_display_cfg_t*);
         //Disable Stereoscopic 3D
-        if (cfg->multiview_format == S3D_RightOnly)
-            res = UpdateSwapChain(vd, true);
-        if (cfg->multiview_format == S3D_Stereo)
-            res = UpdateSwapChain(vd, false);
-        assert(res != VLC_EGENERIC);
+        if ((cfg->multiview_format == S3D_RightOnly) || (cfg->multiview_format == S3D_LeftOnly))
+        {
+            if (!sys->turnOn2D)
+            {
+                sys->turnOn2D = true;
+                //Direct3D11Close(vd);
+                {
+                    //Direct3D11DestroyResources(vd);
+                    {
+                        vout_display_sys_t *sys = vd->sys;
+
+                        Direct3D11DestroyPool(vd);
+
+                        ReleaseQuad(&sys->picQuad);
+                        //Direct3D11DeleteRegions(sys->d3dregion_count, sys->d3dregions);
+                        //sys->d3dregion_count = 0;
+
+                        ReleasePictureSys(&sys->stagingSys);
+
+                        if (sys->flatVSShader)
+                        {
+                            ID3D11VertexShader_Release(sys->flatVSShader);
+                            sys->flatVSShader = NULL;
+                        }
+                        if (sys->projectionVSShader)
+                        {
+                            ID3D11VertexShader_Release(sys->projectionVSShader);
+                            sys->projectionVSShader = NULL;
+                        }
+                        if (sys->d3drenderTargetView)
+                        {
+                            ID3D11RenderTargetView_Release(sys->d3drenderTargetView);
+                            sys->d3drenderTargetView = NULL;
+                        }
+                        if (sys->d3drenderTargetViewRightEye)
+                        {
+                            ID3D11RenderTargetView_Release(sys->d3drenderTargetViewRightEye);
+                            sys->d3drenderTargetViewRightEye = NULL;
+                        }
+                        if (sys->d3ddepthStencilView)
+                        {
+                            ID3D11DepthStencilView_Release(sys->d3ddepthStencilView);
+                            sys->d3ddepthStencilView = NULL;
+                        }
+                        if (sys->pSPUPixelShader)
+                        {
+                            ID3D11PixelShader_Release(sys->pSPUPixelShader);
+                            sys->pSPUPixelShader = NULL;
+                        }
+                        if (sys->picQuadPixelShader)
+                        {
+                            ID3D11PixelShader_Release(sys->picQuadPixelShader);
+                            sys->picQuadPixelShader = NULL;
+                        }
+                    #if defined(HAVE_ID3D11VIDEODECODER)
+                        if( sys->context_lock != INVALID_HANDLE_VALUE )
+                        {
+                            CloseHandle( sys->context_lock );
+                            sys->context_lock = INVALID_HANDLE_VALUE;
+                        }
+                    #endif
+                    }
+                    if (sys->d3dcontext)
+                    {
+                        ID3D11DeviceContext_Flush(sys->d3dcontext);
+                        ID3D11DeviceContext_Release(sys->d3dcontext);
+                        sys->d3dcontext = NULL;
+                    }
+                    if (sys->d3ddevice)
+                    {
+                        ID3D11Device_Release(sys->d3ddevice);
+                        sys->d3ddevice = NULL;
+                    }
+                    if (sys->d3d11device)
+                    {
+                        ID3D11Device_Release(sys->d3d11device);
+                        sys->d3d11device = NULL;
+                    }
+                    if (sys->dxgiswapChain4)
+                    {
+                        IDXGISwapChain_Release(sys->dxgiswapChain4);
+                        sys->dxgiswapChain4 = NULL;
+                    }
+                    if (sys->dxgiswapChain)
+                    {
+                        IDXGISwapChain_Release(sys->dxgiswapChain);
+                        sys->dxgiswapChain = NULL;
+                    }
+
+                    msg_Dbg(vd, "Direct3D11 device adapter closed");
+                }
+                Direct3D11Open(vd, &vd->source);
+            }
+            //res = UpdateSwapChain(vd, true);
+        }
+        else if (cfg->multiview_format == S3D_Auto)
+        {
+
+            if (sys->turnOn2D)
+            {
+                sys->turnOn2D = false;
+                Direct3D11Close(vd);
+                Direct3D11Open(vd, &vd->source);
+            }
+        }
+//For temporary testing
+#if !defined(NDEBUG) && defined(HAVE_DXGIDEBUG_H)
+        HINSTANCE dxgidebug_dll = LoadLibrary(TEXT("DXGIDebug.dll"));
+        HRESULT (WINAPI  * pf_DXGIGetDebugInterface)(const GUID *riid, void **ppDebug);
+        if (dxgidebug_dll) {
+            pf_DXGIGetDebugInterface = (void *)GetProcAddress(dxgidebug_dll, "DXGIGetDebugInterface");
+            if (pf_DXGIGetDebugInterface) {
+                IDXGIDebug *pDXGIDebug = NULL;
+                HRESULT hr = pf_DXGIGetDebugInterface(&IID_IDXGIDebug, (void**)&pDXGIDebug);
+                if (SUCCEEDED(hr) && pDXGIDebug) {
+                    hr = IDXGIDebug_ReportLiveObjects(pDXGIDebug, DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+                }
+            }
+            FreeLibrary(dxgidebug_dll);
+        }
+#endif
+        //assert(res != VLC_EGENERIC);
         UpdateBackBuffer(vd);
         UpdatePicQuadPosition(vd);
         res = VLC_SUCCESS;
@@ -1737,14 +1859,16 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
         //sys->source3DFormat = MULTIVIEW_STEREO_TB;
         multiview_mode_remember = MULTIVIEW_STEREO_TB;
     }
-    else if ((fmt->multiview_mode == MULTIVIEW_2D) && (s3d_format_selection != S3D_Auto))
+    else if ((fmt->multiview_mode == MULTIVIEW_2D) && (s3d_format_selection == S3D_Auto))
         sys->stereo_enabled = false;
 
+    sys->stereo_enabled = !sys->turnOn2D ? sys->stereo_enabled : false ;
     if (sys->stereo_enabled)
     {
         scd.Stereo = TRUE;
         scd.Scaling = DXGI_SCALING_NONE;
         scd.Flags = 0;
+        sys->turnOn2D = false;
     }
 
     hr = IDXGIFactory2_CreateSwapChainForHwnd(dxgifactory, (IUnknown *)sys->d3d11device,
@@ -2893,6 +3017,11 @@ static void Direct3D11DestroyResources(vout_display_t *vd)
     {
         ID3D11RenderTargetView_Release(sys->d3drenderTargetView);
         sys->d3drenderTargetView = NULL;
+    }
+    if (sys->d3drenderTargetViewRightEye)
+    {
+        ID3D11RenderTargetView_Release(sys->d3drenderTargetViewRightEye);
+        sys->d3drenderTargetViewRightEye = NULL;
     }
     if (sys->d3ddepthStencilView)
     {
