@@ -39,6 +39,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/mem.h>
 #include <libavutil/pixdesc.h>
+#include <libavutil/stereo3d.h>
 #if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 16, 101 ) )
 #include <libavutil/mastering_display_metadata.h>
 #endif
@@ -767,6 +768,8 @@ static void DecodeSidedata( decoder_t *p_dec, const AVFrame *frame, picture_t *p
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
     bool format_changed = false;
+    static int currentMultiviewFormat = -1;
+    static decoder_owner_sys_t *oldDecoderOwner;
 
 #if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 16, 101 ) )
 #define FROM_AVRAT(default_factor, avrat) \
@@ -841,6 +844,46 @@ static void DecodeSidedata( decoder_t *p_dec, const AVFrame *frame, picture_t *p
             format_changed = true;
         }
     }
+#endif
+
+#if LIBAVUTIL_VERSION_CHECK( 52, 20, 0, 58, 100 )
+    const AVFrameSideData *p_stereo3d_data =
+            av_frame_get_side_data( frame,
+                                    AV_FRAME_DATA_STEREO3D );
+    if( p_stereo3d_data )
+    {
+        const struct AVStereo3D *stereo_data =
+                (const AVStereo3D *) p_stereo3d_data->data;
+        switch (stereo_data->type)
+        {
+        case AV_STEREO3D_SIDEBYSIDE:
+            p_pic->format.multiview_mode = MULTIVIEW_STEREO_SBS;
+            break;
+        case AV_STEREO3D_TOPBOTTOM:
+            p_pic->format.multiview_mode = MULTIVIEW_STEREO_TB;
+            break;
+        case AV_STEREO3D_FRAMESEQUENCE:
+            p_pic->format.multiview_mode = MULTIVIEW_STEREO_FRAME;
+            break;
+        case AV_STEREO3D_COLUMNS:
+            p_pic->format.multiview_mode = MULTIVIEW_STEREO_ROW;
+            break;
+        case AV_STEREO3D_LINES:
+            p_pic->format.multiview_mode = MULTIVIEW_STEREO_COL;
+            break;
+        case AV_STEREO3D_CHECKERBOARD:
+            p_pic->format.multiview_mode = MULTIVIEW_STEREO_CHECKERBOARD;
+            break;
+        case AV_STEREO3D_2D:
+        default:
+            p_pic->format.multiview_mode = MULTIVIEW_2D;
+            break;
+        }
+        p_dec->fmt_out.video.multiview_mode = p_pic->format.multiview_mode;
+        format_changed = true;
+    }
+    else
+        p_dec->fmt_out.video.multiview_mode = -1;
 #endif
 
     if (format_changed)

@@ -418,8 +418,7 @@ static int vout_update_format( decoder_t *p_dec )
      || p_dec->fmt_out.i_codec != p_owner->fmt.video.i_chroma
      || (int64_t)p_dec->fmt_out.video.i_sar_num * p_owner->fmt.video.i_sar_den !=
         (int64_t)p_dec->fmt_out.video.i_sar_den * p_owner->fmt.video.i_sar_num ||
-        p_dec->fmt_out.video.orientation != p_owner->fmt.video.orientation ||
-        p_dec->fmt_out.video.multiview_mode != p_owner->fmt.video.multiview_mode )
+        p_dec->fmt_out.video.orientation != p_owner->fmt.video.orientation )
     {
         vout_thread_t *p_vout;
 
@@ -534,13 +533,15 @@ static int vout_update_format( decoder_t *p_dec )
         }
     }
 
-    if ( memcmp( &p_dec->fmt_out.video.mastering,
+    else if ( memcmp( &p_dec->fmt_out.video.mastering,
                  &p_owner->fmt.video.mastering,
                  sizeof(p_owner->fmt.video.mastering)) ||
          p_dec->fmt_out.video.lighting.MaxCLL !=
          p_owner->fmt.video.lighting.MaxCLL ||
          p_dec->fmt_out.video.lighting.MaxFALL !=
-         p_owner->fmt.video.lighting.MaxFALL)
+         p_owner->fmt.video.lighting.MaxFALL ||
+         p_dec->fmt_out.video.multiview_mode !=
+         p_owner->fmt.video.multiview_mode )
     {
         /* the format has changed but we don't need a new vout */
         vlc_mutex_lock( &p_owner->lock );
