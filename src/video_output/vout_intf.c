@@ -84,7 +84,7 @@ static int ViewpointCallback( vlc_object_t *, char const *,
 static const struct
 {
     int i_value;
-    char psz_label[27];
+    char psz_label[12];
 } p_3D_output_format_values[] = {
     { 0, N_("Auto-detect") },
     { 1, N_("Left Only") },
@@ -102,8 +102,6 @@ static const struct
     { 1, N_("1:1 Original") },
     { 2, N_("2:1 Double") },
 };
-
-
 
 static const struct
 {
@@ -548,7 +546,6 @@ static int Stereo3DFormatCallback( vlc_object_t *obj, char const *name,
                          vlc_value_t prev, vlc_value_t cur, void *data )
 {
     vout_thread_t *p_vout = (vout_thread_t *)obj;
-
     (void) name; (void) prev; (void) data;
     vout_ControlChangeMultiview( p_vout, cur.i_int );
     return VLC_SUCCESS;

@@ -106,7 +106,6 @@ typedef struct {
 
     /* Multiview format for stereoscopic 3D */
     unsigned multiview_format;
-    unsigned prev_multiview_format;
 
     /* Zoom to use
      * It will be applied to the whole display if b_display_filled is set, otherwise
