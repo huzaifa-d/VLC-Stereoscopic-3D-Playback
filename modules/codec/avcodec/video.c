@@ -39,13 +39,16 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/mem.h>
 #include <libavutil/pixdesc.h>
-#include <libavutil/stereo3d.h>
 #if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 16, 101 ) )
 #include <libavutil/mastering_display_metadata.h>
 #endif
 
 #include "avcodec.h"
 #include "va.h"
+
+#if LIBAVUTIL_VERSION_CHECK( 52, 20, 0, 58, 100 )
+#include <libavutil/stereo3d.h>
+#endif
 
 #include "../codec/cc.h"
 
@@ -768,8 +771,6 @@ static void DecodeSidedata( decoder_t *p_dec, const AVFrame *frame, picture_t *p
 {
     decoder_sys_t *p_sys = p_dec->p_sys;
     bool format_changed = false;
-    static int currentMultiviewFormat = -1;
-    static decoder_owner_sys_t *oldDecoderOwner;
 
 #if (LIBAVUTIL_VERSION_MICRO >= 100 && LIBAVUTIL_VERSION_INT >= AV_VERSION_INT( 55, 16, 101 ) )
 #define FROM_AVRAT(default_factor, avrat) \
@@ -880,10 +881,7 @@ static void DecodeSidedata( decoder_t *p_dec, const AVFrame *frame, picture_t *p
             break;
         }
         p_dec->fmt_out.video.multiview_mode = p_pic->format.multiview_mode;
-        format_changed = true;
     }
-    else
-        p_dec->fmt_out.video.multiview_mode = -1;
 #endif
 
     if (format_changed)

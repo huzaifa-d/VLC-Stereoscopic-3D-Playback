@@ -46,16 +46,17 @@
 static const char *const ppsz_snap_formats[] =
 { "png", "jpg", "tiff" };
 
-#define S3D_FORMAT_TEXT      N_("Stereo 3D file format")
-#define S3D_FORMAT_TEXT_LONGTEXT  N_("Set the 3D file format manually"\
-                                "Autodetect, Left Only, Right Only, Stereo")
+#define VIDEO_STEREO_FORMAT_TEXT      N_("Video Stereo 3D file format")
+#define VIDEO_STEREO_FORMAT_TEXT_LONGTEXT  N_("Set the Video Stereo 3D file format manually"\
+                                "Autodetect, Left Only, Right Only, Cardboard, Stereo")
 
-static const int sbs_formats[] = {
-    S3D_Auto, S3D_LeftOnly, S3D_RightOnly, S3D_Stereo,
+static const int video_stereo_formats[] = {
+    VIDEO_STEREO_OUTPUT_AUTO, VIDEO_STEREO_OUTPUT_LEFT_ONLY, VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
+    VIDEO_STEREO_OUTPUT_CARDBOARD, VIDEO_STEREO_OUTPUT_STEREO,
 
 };
-static const char *const sbs_formats_text[] = {
-     N_("Auto-detect"), N_("Left Only"), N_("Right Only"), N_("Stereo"),
+static const char *const video_stereo_formats_text[] = {
+     N_("Auto-detect"), N_("Left Only"), N_("Right Only"), N_("Cardboard"), N_("Stereo"),
 };
 
 /*****************************************************************************
@@ -1558,8 +1559,8 @@ vlc_module_begin ()
 
     add_bool( "video-title-show", 1, VIDEO_TITLE_SHOW_TEXT,
               VIDEO_TITLE_SHOW_LONGTEXT, false )
-    add_integer ("s3d-output", S3D_Auto, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
-        change_integer_list (sbs_formats, sbs_formats_text)
+    add_integer ("video-stereo-mode", VIDEO_STEREO_OUTPUT_AUTO, VIDEO_STEREO_FORMAT_TEXT, VIDEO_STEREO_FORMAT_TEXT_LONGTEXT, false)
+        change_integer_list (video_stereo_formats, video_stereo_formats_text)
 
         change_safe()
     add_integer( "video-title-timeout", 5000, VIDEO_TITLE_TIMEOUT_TEXT,

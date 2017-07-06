@@ -345,12 +345,13 @@ struct vlc_list_t
     vlc_value_t *p_values;
 };
 
-typedef enum STEREOSCOPIC_3D_FORMATS {
-    S3D_Auto,
-    S3D_LeftOnly,
-    S3D_RightOnly,
-    S3D_Stereo,
-} STEREOSCOPIC_3D_FORMATS;
+typedef enum vlc_stereoscopic_3d_output_t{
+    VIDEO_STEREO_OUTPUT_AUTO,
+    VIDEO_STEREO_OUTPUT_LEFT_ONLY,
+    VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
+    VIDEO_STEREO_OUTPUT_CARDBOARD,
+    VIDEO_STEREO_OUTPUT_STEREO,
+} vlc_stereoscopic_3d_output_t;
 
 /*****************************************************************************
  * Error values (shouldn't be exposed)
