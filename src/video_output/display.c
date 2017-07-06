@@ -1150,13 +1150,12 @@ void vout_SetDisplayFilled(vout_display_t *vd, bool is_filled)
 void vout_SetMultiview(vout_display_t *vd, int format)
 {
     vout_display_owner_sys_t *osys = vd->owner.sys;
-    //Default values needed, even for format
+
     if (osys->multiview_format != format) {
         osys->ch_multiview = true;
         osys->multiview_format = format;
     }
 }
-
 
 void vout_SetDisplayZoom(vout_display_t *vd, unsigned num, unsigned den)
 {

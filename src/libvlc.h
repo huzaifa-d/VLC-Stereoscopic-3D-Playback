@@ -172,11 +172,11 @@ void vlc_objres_remove(vlc_object_t *obj, void *data,
 #define ZOOM_ORIGINAL_KEY_TEXT N_("1:1 Original")
 #define ZOOM_DOUBLE_KEY_TEXT N_("2:1 Double")
 
-#define S3D_SECTION N_("Multiview")
+#define S3D_SECTION N_("Stereoscopic 3D Output Format")
 #define S3D_AUTO_KEY_TEXT N_("Auto-detect")
 #define S3D_LEFT_ONLY_KEY_TEXT N_("Left Only")
 #define S3D_RIGHT_ONLY_KEY_TEXT N_("Right Only")
-#define S3D_SBS_STEREO_KEY_TEXT N_("Stereo")
+#define S3D_SBS_STEREO_KEY_TEXT N_("Stereo Cardboard")
 /**
  * Private LibVLC instance data.
  */

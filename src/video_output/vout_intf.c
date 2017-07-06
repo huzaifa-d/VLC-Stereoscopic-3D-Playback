@@ -198,19 +198,19 @@ void vout_IntfInit( vout_thread_t *p_vout )
 
     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
 
-    var_Create( p_vout, "s3d-output", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
+    var_Create( p_vout, "video-stereo-mode", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
 
     text.psz_string = _("3d-output");
-    var_Change( p_vout, "s3d-output", VLC_VAR_SETTEXT, &text, NULL );
+    var_Change( p_vout, "video-stereo-mode", VLC_VAR_SETTEXT, &text, NULL );
 
     for( size_t i = 0; i < ARRAY_SIZE(p_3D_output_format_values); i++ )
     {
         val.i_int = p_3D_output_format_values[i].i_value;
         text.psz_string = vlc_gettext( p_3D_output_format_values[i].psz_label );
-        var_Change( p_vout, "s3d-output", VLC_VAR_ADDCHOICE, &val, &text );
+        var_Change( p_vout, "video-stereo-mode", VLC_VAR_ADDCHOICE, &val, &text );
     }
 
-    var_AddCallback( p_vout, "s3d-output", Stereo3DFormatCallback, NULL );
+    var_AddCallback( p_vout, "video-stereo-mode", Stereo3DFormatCallback, NULL );
 
     /* Crop offset vars */
     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );

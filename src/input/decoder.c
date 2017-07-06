@@ -532,8 +532,8 @@ static int vout_update_format( decoder_t *p_dec )
             return -1;
         }
     }
-
-    else if ( memcmp( &p_dec->fmt_out.video.mastering,
+    else
+    if ( memcmp( &p_dec->fmt_out.video.mastering,
                  &p_owner->fmt.video.mastering,
                  sizeof(p_owner->fmt.video.mastering)) ||
          p_dec->fmt_out.video.lighting.MaxCLL !=

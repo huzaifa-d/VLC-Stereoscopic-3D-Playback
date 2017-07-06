@@ -51,7 +51,7 @@ static const char *const ppsz_snap_formats[] =
                                 "Autodetect, Left Only, Right Only, Stereo")
 
 static const int sbs_formats[] = {
-    S3D_Auto, S3D_LeftOnly, S3D_RightOnly, S3D_Stereo,
+    OUTPUT_3D_AUTO, OUTPUT_3D_LEFT_ONLY, OUTPUT_3D_RIGHT_ONLY, OUTPUT_3D_STEREO_CARDBOARD,
 
 };
 static const char *const sbs_formats_text[] = {
@@ -1558,7 +1558,7 @@ vlc_module_begin ()
 
     add_bool( "video-title-show", 1, VIDEO_TITLE_SHOW_TEXT,
               VIDEO_TITLE_SHOW_LONGTEXT, false )
-    add_integer ("s3d-output", S3D_Auto, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
+    add_integer ("video-stereo-mode", OUTPUT_3D_AUTO, S3D_FORMAT_TEXT, S3D_FORMAT_TEXT_LONGTEXT, false)
         change_integer_list (sbs_formats, sbs_formats_text)
 
         change_safe()
