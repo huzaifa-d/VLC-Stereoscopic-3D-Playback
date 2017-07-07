@@ -1,0 +1,209 @@
+From 776fbcb05d85621443e3f8602c3c55f9d6bdffab Mon Sep 17 00:00:00 2001
+From: Mohammed Danish <shaan3@gmail.com>
+Date: Fri, 7 Jul 2017 11:14:17 +0530
+Subject: [PATCH 6/6] Stereo 3D GUI Callbacks
+
+---
+ include/vlc_vout_display.h       |  7 +++++++
+ include/vlc_vout_wrapper.h       |  1 +
+ src/video_output/control.h       |  1 +
+ src/video_output/display.c       | 23 +++++++++++++++++++++++
+ src/video_output/video_output.c  | 12 ++++++++++++
+ src/video_output/vout_internal.h |  1 +
+ src/video_output/vout_intf.c     | 13 +++++++++++++
+ 7 files changed, 58 insertions(+)
+
+diff --git a/include/vlc_vout_display.h b/include/vlc_vout_display.h
+index 5cbd51481c..53bd7a83dc 100644
+--- a/include/vlc_vout_display.h
++++ b/include/vlc_vout_display.h
+@@ -104,6 +104,9 @@ typedef struct {
+     /* Do we fill up the display with the video */
+     bool is_display_filled;
+ 
++    /* Multiview format for stereoscopic 3D */
++    unsigned multiview_format;
++
+     /* Zoom to use
+      * It will be applied to the whole display if b_display_filled is set, otherwise
+      * only on the video source */
+@@ -177,6 +180,10 @@ enum {
+     /* Ask the module to acknowledge/refuse VR/360° viewing direction after
+      * being requested externally */
+     VOUT_DISPLAY_CHANGE_VIEWPOINT,   /* const vout_display_cfg_t *p_cfg */
++
++    /* Ask the module to acknowledge/refuse a new Stereoscopic 3D format after
++     * being requested externally */
++    VOUT_DISPLAY_CHANGE_MULTIVIEW,   /* const vout_display_cfg_t *p_cfg */
+ };
+ 
+ /**
+diff --git a/include/vlc_vout_wrapper.h b/include/vlc_vout_wrapper.h
+index 8ad826f6cc..5d9084047d 100644
+--- a/include/vlc_vout_wrapper.h
++++ b/include/vlc_vout_wrapper.h
+@@ -85,6 +85,7 @@ bool vout_AreDisplayPicturesInvalid(vout_display_t *);
+ bool vout_ManageDisplay(vout_display_t *, bool allow_reset_pictures);
+ 
+ void vout_SetDisplayFilled(vout_display_t *, bool is_filled);
++void vout_SetMultiview(vout_display_t *vd, int format);
+ void vout_SetDisplayZoom(vout_display_t *, unsigned num, unsigned den);
+ void vout_SetDisplayAspect(vout_display_t *, unsigned num, unsigned den);
+ void vout_SetDisplayCrop(vout_display_t *, unsigned num, unsigned den,
+diff --git a/src/video_output/control.h b/src/video_output/control.h
+index f49208ab6a..e65d9fc9d9 100644
+--- a/src/video_output/control.h
++++ b/src/video_output/control.h
+@@ -46,6 +46,7 @@ enum {
+     VOUT_CONTROL_CHANGE_SUB_SOURCES,    /* string */
+     VOUT_CONTROL_CHANGE_SUB_FILTERS,    /* string */
+     VOUT_CONTROL_CHANGE_SUB_MARGIN,     /* integer */
++    VOUT_CONTROL_CHANGE_MULTIVIEW,     /* integer */
+ 
+     VOUT_CONTROL_PAUSE,
+     VOUT_CONTROL_FLUSH,                 /* time */
+diff --git a/src/video_output/display.c b/src/video_output/display.c
+index aaa24b053d..c195e835f1 100644
+--- a/src/video_output/display.c
++++ b/src/video_output/display.c
+@@ -348,6 +348,8 @@ typedef struct {
+     bool is_display_filled;
+ 
+     bool ch_zoom;
++    bool ch_multiview;
++    unsigned multiview_format;
+     vlc_rational_t zoom;
+ #if defined(_WIN32) || defined(__OS2__)
+     bool ch_wm_state;
+@@ -849,6 +851,7 @@ bool vout_ManageDisplay(vout_display_t *vd, bool allow_reset_pictures)
+ #if defined(_WIN32) || defined(__OS2__)
+             !ch_wm_state &&
+ #endif
++            !osys->ch_multiview &&
+             !osys->ch_sar &&
+             !osys->ch_crop &&
+             !osys->ch_viewpoint) {
+@@ -932,6 +935,16 @@ bool vout_ManageDisplay(vout_display_t *vd, bool allow_reset_pictures)
+             osys->cfg.zoom.den = osys->zoom.den;
+             osys->ch_zoom = false;
+         }
++        if (osys->ch_multiview) {
++            vout_display_cfg_t cfg = osys->cfg;
++            cfg.multiview_format = osys->multiview_format;
++
++            if (vout_display_Control(vd, VOUT_DISPLAY_CHANGE_MULTIVIEW, &cfg)) {
++                msg_Err(vd, "Failed to change zoom");
++            }
++
++            osys->ch_multiview = false;
++        }
+ #if defined(_WIN32) || defined(__OS2__)
+         /* */
+         if (ch_wm_state) {
+@@ -1134,6 +1147,16 @@ void vout_SetDisplayFilled(vout_display_t *vd, bool is_filled)
+     }
+ }
+ 
++void vout_SetMultiview(vout_display_t *vd, int format)
++{
++    vout_display_owner_sys_t *osys = vd->owner.sys;
++
++    if (osys->multiview_format != format) {
++        osys->ch_multiview = true;
++        osys->multiview_format = format;
++    }
++}
++
+ void vout_SetDisplayZoom(vout_display_t *vd, unsigned num, unsigned den)
+ {
+     vout_display_owner_sys_t *osys = vd->owner.sys;
+diff --git a/src/video_output/video_output.c b/src/video_output/video_output.c
+index 2f11ebeec3..8864aba547 100644
+--- a/src/video_output/video_output.c
++++ b/src/video_output/video_output.c
+@@ -480,6 +480,10 @@ void vout_ControlChangeWindowState(vout_thread_t *vout, unsigned st)
+ {
+     vout_control_PushInteger(&vout->p->control, VOUT_CONTROL_WINDOW_STATE, st);
+ }
++void vout_ControlChangeMultiview(vout_thread_t *vout, unsigned format)
++{
++    vout_control_PushInteger(&vout->p->control, VOUT_CONTROL_CHANGE_MULTIVIEW, format);
++}
+ void vout_ControlChangeDisplayFilled(vout_thread_t *vout, bool is_filled)
+ {
+     vout_control_PushBool(&vout->p->control, VOUT_CONTROL_DISPLAY_FILLED,
+@@ -1299,6 +1303,11 @@ static void ThreadChangeWindowState(vout_thread_t *vout, unsigned state)
+ #endif
+ }
+ 
++ static void ThreadChangeMultiview(vout_thread_t *vout, unsigned format)
++ {
++    vout_SetMultiview(vout->p->display.vd, format);
++ }
++
+ static void ThreadChangeWindowMouse(vout_thread_t *vout,
+                                     const vout_window_mouse_event_t *mouse)
+ {
+@@ -1645,6 +1654,9 @@ static int ThreadControl(vout_thread_t *vout, vout_control_cmd_t cmd)
+     case VOUT_CONTROL_WINDOW_STATE:
+         ThreadChangeWindowState(vout, cmd.u.integer);
+         break;
++    case VOUT_CONTROL_CHANGE_MULTIVIEW:
++        ThreadChangeMultiview(vout, cmd.u.integer);
++        break;
+     case VOUT_CONTROL_WINDOW_MOUSE:
+         ThreadChangeWindowMouse(vout, &cmd.u.window_mouse);
+         break;
+diff --git a/src/video_output/vout_internal.h b/src/video_output/vout_internal.h
+index 400bcb8b61..eb7bf76699 100644
+--- a/src/video_output/vout_internal.h
++++ b/src/video_output/vout_internal.h
+@@ -141,6 +141,7 @@ struct vout_thread_sys_t
+ /* TODO to move them to vlc_vout.h */
+ void vout_ControlChangeFullscreen(vout_thread_t *, bool fullscreen);
+ void vout_ControlChangeWindowState(vout_thread_t *, unsigned state);
++void vout_ControlChangeMultiview(vout_thread_t *vout, unsigned format);
+ void vout_ControlChangeDisplayFilled(vout_thread_t *, bool is_filled);
+ void vout_ControlChangeZoom(vout_thread_t *, int num, int den);
+ void vout_ControlChangeSampleAspectRatio(vout_thread_t *, unsigned num, unsigned den);
+diff --git a/src/video_output/vout_intf.c b/src/video_output/vout_intf.c
+index 0301751588..de7b446530 100644
+--- a/src/video_output/vout_intf.c
++++ b/src/video_output/vout_intf.c
+@@ -57,6 +57,8 @@ static int AutoScaleCallback( vlc_object_t *, char const *,
+                               vlc_value_t, vlc_value_t, void * );
+ static int ZoomCallback( vlc_object_t *, char const *,
+                          vlc_value_t, vlc_value_t, void * );
++static int Stereo3DFormatCallback( vlc_object_t *, char const *,
++                         vlc_value_t, vlc_value_t, void * );
+ static int AboveCallback( vlc_object_t *, char const *,
+                           vlc_value_t, vlc_value_t, void * );
+ static int WallPaperCallback( vlc_object_t *, char const *,
+@@ -209,6 +211,8 @@ void vout_IntfInit( vout_thread_t *p_vout )
+         var_Change( p_vout, "video-stereo-mode", VLC_VAR_ADDCHOICE, &val, &text );
+     }
+ 
++    var_AddCallback( p_vout, "video-stereo-mode", Stereo3DFormatCallback, NULL );
++
+     /* Crop offset vars */
+     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
+     var_Create( p_vout, "crop-top", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
+@@ -539,6 +543,15 @@ static int ZoomCallback( vlc_object_t *obj, char const *name,
+     return VLC_SUCCESS;
+ }
+ 
++static int Stereo3DFormatCallback( vlc_object_t *obj, char const *name,
++                         vlc_value_t prev, vlc_value_t cur, void *data )
++{
++    vout_thread_t *p_vout = (vout_thread_t *)obj;
++    (void) name; (void) prev; (void) data;
++    vout_ControlChangeMultiview( p_vout, cur.i_int );
++    return VLC_SUCCESS;
++}
++
+ static int AboveCallback( vlc_object_t *obj, char const *name,
+                           vlc_value_t prev, vlc_value_t cur, void *data )
+ {
+-- 
+2.12.2.windows.2
+

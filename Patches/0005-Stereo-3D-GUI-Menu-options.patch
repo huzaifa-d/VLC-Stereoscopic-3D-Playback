@@ -1,0 +1,77 @@
+From b1a22570ee7cf1ddf6db17fcc7e7d00608b153cc Mon Sep 17 00:00:00 2001
+From: Mohammed Danish <shaan3@gmail.com>
+Date: Fri, 7 Jul 2017 11:11:22 +0530
+Subject: [PATCH 5/6] Stereo 3D GUI Menu options
+
+---
+ modules/gui/qt/menus.cpp     |  4 ++++
+ src/video_output/vout_intf.c | 24 ++++++++++++++++++++++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/modules/gui/qt/menus.cpp b/modules/gui/qt/menus.cpp
+index 6395a0a068..baae734690 100644
+--- a/modules/gui/qt/menus.cpp
++++ b/modules/gui/qt/menus.cpp
+@@ -241,6 +241,7 @@ static int VideoAutoMenuBuilder( playlist_t *pl, input_thread_t *p_input,
+     PUSH_PLVAR( "video-on-top" );
+     PUSH_PLVAR( "video-wallpaper" );
+     PUSH_VAR( "video-snapshot" );
++    PUSH_VAR( "video-stereo-mode" );
+     PUSH_VAR( "zoom" );
+     PUSH_VAR( "autoscale" );
+     PUSH_VAR( "aspect-ratio" );
+@@ -671,6 +672,9 @@ QMenu *VLCMenuBar::VideoMenu( intf_thread_t *p_intf, QMenu *current )
+         current->addMenu( rendererMenu );
+ 
+         current->addSeparator();
++        addActionWithSubmenu( current, "video-stereo-mode", qtr( "&3D Output" ) );
++
++        current->addSeparator();
+         /* Surface modifiers */
+         addActionWithCheckbox( current, "fullscreen", qtr( "&Fullscreen" ) );
+         addActionWithCheckbox( current, "autoscale", qtr( "Always Fit &Window" ) );
+diff --git a/src/video_output/vout_intf.c b/src/video_output/vout_intf.c
+index 631099c3ee..0301751588 100644
+--- a/src/video_output/vout_intf.c
++++ b/src/video_output/vout_intf.c
+@@ -81,6 +81,18 @@ static int ViewpointCallback( vlc_object_t *, char const *,
+  *****************************************************************************/
+ static const struct
+ {
++    int i_value;
++    char psz_label[12];
++} p_3D_output_format_values[] = {
++    { 0, N_("Auto-detect") },
++    { 1, N_("Left Only") },
++    { 2, N_("Right Only") },
++    { 3, N_("Cardboard") },
++    { 4, N_("Stereo") },
++};
++
++static const struct
++{
+     double f_value;
+     char psz_label[13];
+ } p_zoom_values[] = {
+@@ -185,6 +197,18 @@ void vout_IntfInit( vout_thread_t *p_vout )
+ 
+     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
+ 
++    var_Create( p_vout, "video-stereo-mode", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
++
++    text.psz_string = _("video-stereo-output");
++    var_Change( p_vout, "video-stereo-mode", VLC_VAR_SETTEXT, &text, NULL );
++
++    for( size_t i = 0; i < ARRAY_SIZE(p_3D_output_format_values); i++ )
++    {
++        val.i_int = p_3D_output_format_values[i].i_value;
++        text.psz_string = vlc_gettext( p_3D_output_format_values[i].psz_label );
++        var_Change( p_vout, "video-stereo-mode", VLC_VAR_ADDCHOICE, &val, &text );
++    }
++
+     /* Crop offset vars */
+     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
+     var_Create( p_vout, "crop-top", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
+-- 
+2.12.2.windows.2
+

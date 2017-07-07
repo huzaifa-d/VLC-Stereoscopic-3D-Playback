@@ -1,0 +1,66 @@
+From 5f51ff936b5a6aac04f1de6bf05e6eb8d325b5f4 Mon Sep 17 00:00:00 2001
+From: Mohammed Danish <shaan3@gmail.com>
+Date: Fri, 7 Jul 2017 11:07:17 +0530
+Subject: [PATCH 3/6] Adding parameter to select Stereo 3D output
+
+---
+ include/vlc_common.h |  8 ++++++++
+ src/libvlc-module.c  | 16 ++++++++++++++++
+ 2 files changed, 24 insertions(+)
+
+diff --git a/include/vlc_common.h b/include/vlc_common.h
+index 94ab07e7a1..25cf344ac0 100644
+--- a/include/vlc_common.h
++++ b/include/vlc_common.h
+@@ -345,6 +345,14 @@ struct vlc_list_t
+     vlc_value_t *p_values;
+ };
+ 
++typedef enum vlc_stereoscopic_3d_output_t{
++    VIDEO_STEREO_OUTPUT_AUTO,
++    VIDEO_STEREO_OUTPUT_LEFT_ONLY,
++    VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
++    VIDEO_STEREO_OUTPUT_CARDBOARD,
++    VIDEO_STEREO_OUTPUT_STEREO,
++} vlc_stereoscopic_3d_output_t;
++
+ /*****************************************************************************
+  * Error values (shouldn't be exposed)
+  *****************************************************************************/
+diff --git a/src/libvlc-module.c b/src/libvlc-module.c
+index d3a446e832..7ff99475db 100644
+--- a/src/libvlc-module.c
++++ b/src/libvlc-module.c
+@@ -46,6 +46,19 @@
+ static const char *const ppsz_snap_formats[] =
+ { "png", "jpg", "tiff" };
+ 
++#define VIDEO_STEREO_FORMAT_TEXT      N_("Video Stereo 3D file format")
++#define VIDEO_STEREO_FORMAT_TEXT_LONGTEXT  N_("Set the Video Stereo 3D file format manually"\
++                                "Autodetect, Left Only, Right Only, Cardboard, Stereo")
++
++static const int video_stereo_formats[] = {
++    VIDEO_STEREO_OUTPUT_AUTO, VIDEO_STEREO_OUTPUT_LEFT_ONLY, VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
++    VIDEO_STEREO_OUTPUT_CARDBOARD, VIDEO_STEREO_OUTPUT_STEREO,
++
++};
++static const char *const video_stereo_formats_text[] = {
++     N_("Auto-detect"), N_("Left Only"), N_("Right Only"), N_("Cardboard"), N_("Stereo"),
++};
++
+ /*****************************************************************************
+  * Configuration options for the core module. Each module will also separatly
+  * define its own configuration options.
+@@ -1546,6 +1559,9 @@ vlc_module_begin ()
+ 
+     add_bool( "video-title-show", 1, VIDEO_TITLE_SHOW_TEXT,
+               VIDEO_TITLE_SHOW_LONGTEXT, false )
++    add_integer ("video-stereo-mode", VIDEO_STEREO_OUTPUT_AUTO, VIDEO_STEREO_FORMAT_TEXT, VIDEO_STEREO_FORMAT_TEXT_LONGTEXT, false)
++        change_integer_list (video_stereo_formats, video_stereo_formats_text)
++
+         change_safe()
+     add_integer( "video-title-timeout", 5000, VIDEO_TITLE_TIMEOUT_TEXT,
+                  VIDEO_TITLE_TIMEOUT_LONGTEXT, false )
+-- 
+2.12.2.windows.2
+
