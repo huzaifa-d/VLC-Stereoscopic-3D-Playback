@@ -241,6 +241,7 @@ static int VideoAutoMenuBuilder( playlist_t *pl, input_thread_t *p_input,
     PUSH_PLVAR( "video-on-top" );
     PUSH_PLVAR( "video-wallpaper" );
     PUSH_VAR( "video-snapshot" );
+    PUSH_VAR( "video-stereo-mode" );
     PUSH_VAR( "zoom" );
     PUSH_VAR( "autoscale" );
     PUSH_VAR( "aspect-ratio" );
@@ -669,6 +670,9 @@ QMenu *VLCMenuBar::VideoMenu( intf_thread_t *p_intf, QMenu *current )
         current->addSeparator();
         rendererMenu = RendererMenu( p_intf );
         current->addMenu( rendererMenu );
+
+        current->addSeparator();
+        addActionWithSubmenu( current, "video-stereo-mode", qtr( "&3D Output" ) );
 
         current->addSeparator();
         /* Surface modifiers */
