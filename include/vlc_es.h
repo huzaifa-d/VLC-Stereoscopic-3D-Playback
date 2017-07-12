@@ -211,8 +211,11 @@ typedef enum video_transform_t
 
 typedef enum video_multiview_mode_t
 {
+    /*Needed as some frames in 3D streams are not marked as 3D or anything else*/
+    MULTIVIEW_UNKNOWN = 0,
+
     /* No stereoscopy: 2D picture. */
-    MULTIVIEW_2D = 0,
+    MULTIVIEW_2D,
 
     /* Side-by-side with left eye first. */
     MULTIVIEW_STEREO_SBS,
