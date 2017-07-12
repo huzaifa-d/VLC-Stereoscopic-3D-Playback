@@ -342,6 +342,8 @@ typedef struct {
     bool is_display_filled;
 
     bool ch_zoom;
+    bool ch_multiview;
+    vlc_stereoscopic_3d_output_t multiview_format;
     vlc_rational_t zoom;
 #if defined(_WIN32) || defined(__OS2__)
     unsigned width_saved;
@@ -795,6 +797,7 @@ bool vout_ManageDisplay(vout_display_t *vd, bool allow_reset_pictures)
             !ch_fullscreen &&
             !ch_wm_state &&
 #endif
+            !osys->ch_multiview &&
             !osys->ch_sar &&
             !osys->ch_crop &&
             !osys->ch_viewpoint) {
@@ -880,6 +883,16 @@ bool vout_ManageDisplay(vout_display_t *vd, bool allow_reset_pictures)
             osys->cfg.zoom.num = osys->zoom.num;
             osys->cfg.zoom.den = osys->zoom.den;
             osys->ch_zoom = false;
+        }
+        if (osys->ch_multiview) {
+            vout_display_cfg_t cfg = osys->cfg;
+            cfg.multiview_format = osys->multiview_format;
+
+            if (vout_display_Control(vd, VOUT_DISPLAY_CHANGE_MULTIVIEW, &cfg)) {
+                msg_Err(vd, "Failed to change zoom");
+            }
+
+            osys->ch_multiview = false;
         }
 #if defined(_WIN32) || defined(__OS2__)
         /* */
@@ -1086,6 +1099,16 @@ void vout_SetDisplayFilled(vout_display_t *vd, bool is_filled)
     if (!osys->is_display_filled != !is_filled) {
         osys->ch_display_filled = true;
         osys->is_display_filled = is_filled;
+    }
+}
+
+void vout_SetMultiview(vout_display_t *vd, vlc_stereoscopic_3d_output_t format)
+{
+    vout_display_owner_sys_t *osys = vd->owner.sys;
+
+    if (osys->multiview_format != format) {
+        osys->ch_multiview = true;
+        osys->multiview_format = format;
     }
 }
 

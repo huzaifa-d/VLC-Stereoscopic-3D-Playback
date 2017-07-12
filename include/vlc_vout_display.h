@@ -107,6 +107,9 @@ typedef struct {
     /* Do we fill up the display with the video */
     bool is_display_filled;
 
+    /* Multiview format for stereoscopic 3D */
+    vlc_stereoscopic_3d_output_t multiview_format;
+
     /* Zoom to use
      * It will be applied to the whole display if b_display_filled is set, otherwise
      * only on the video source */
@@ -179,6 +182,10 @@ enum {
     /* Ask the module to acknowledge/refuse VR/360° viewing direction after
      * being requested externally */
     VOUT_DISPLAY_CHANGE_VIEWPOINT,   /* const vout_display_cfg_t *p_cfg */
+
+    /* Ask the module to acknowledge/refuse a new Stereoscopic 3D format after
+     * being requested externally */
+    VOUT_DISPLAY_CHANGE_MULTIVIEW,   /* const vout_display_cfg_t *p_cfg */
 };
 
 /**
