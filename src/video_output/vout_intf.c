@@ -57,6 +57,8 @@ static int AutoScaleCallback( vlc_object_t *, char const *,
                               vlc_value_t, vlc_value_t, void * );
 static int ZoomCallback( vlc_object_t *, char const *,
                          vlc_value_t, vlc_value_t, void * );
+static int Stereo3DFormatCallback( vlc_object_t *, char const *,
+                         vlc_value_t, vlc_value_t, void * );
 static int AboveCallback( vlc_object_t *, char const *,
                           vlc_value_t, vlc_value_t, void * );
 static int WallPaperCallback( vlc_object_t *, char const *,
@@ -207,6 +209,8 @@ void vout_IntfInit( vout_thread_t *p_vout )
         text.psz_string = vlc_gettext( p_3D_output_format_values[i].psz_label );
         var_Change( p_vout, "video-stereo-mode", VLC_VAR_ADDCHOICE, &val, &text );
     }
+
+    var_AddCallback( p_vout, "video-stereo-mode", Stereo3DFormatCallback, NULL );
 
     /* Crop offset vars */
     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
@@ -536,6 +540,15 @@ static int ZoomCallback( vlc_object_t *obj, char const *name,
 
     (void) name; (void) prev; (void) data;
     vout_ControlChangeZoom( p_vout, 1000 * cur.f_float, 1000 );
+    return VLC_SUCCESS;
+}
+
+static int Stereo3DFormatCallback( vlc_object_t *obj, char const *name,
+                         vlc_value_t prev, vlc_value_t cur, void *data )
+{
+    vout_thread_t *p_vout = (vout_thread_t *)obj;
+    (void) name; (void) prev; (void) data;
+    vout_ControlChangeMultiview( p_vout, cur.i_int );
     return VLC_SUCCESS;
 }
 
