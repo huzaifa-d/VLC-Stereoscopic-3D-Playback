@@ -81,6 +81,17 @@ static int ViewpointCallback( vlc_object_t *, char const *,
  *****************************************************************************/
 static const struct
 {
+    int i_value;
+    char psz_label[12];
+} p_3D_output_format_values[] = {
+    { VIDEO_STEREO_OUTPUT_AUTO, N_("Auto-detect") },
+    { VIDEO_STEREO_OUTPUT_STEREO, N_("Stereo") },
+    { VIDEO_STEREO_OUTPUT_LEFT_ONLY, N_("Left Only") },
+    { VIDEO_STEREO_OUTPUT_RIGHT_ONLY, N_("Right Only") },
+};
+
+static const struct
+{
     double f_value;
     char psz_label[13];
 } p_zoom_values[] = {
@@ -184,6 +195,18 @@ void vout_IntfInit( vout_thread_t *p_vout )
     }
 
     var_AddCallback( p_vout, "zoom", ZoomCallback, NULL );
+
+    var_Create( p_vout, "video-stereo-mode", VLC_VAR_INTEGER | VLC_VAR_DOINHERIT );
+
+    text.psz_string = _("video-stereo-output");
+    var_Change( p_vout, "video-stereo-mode", VLC_VAR_SETTEXT, &text, NULL );
+
+    for( size_t i = 0; i < ARRAY_SIZE(p_3D_output_format_values); i++ )
+    {
+        val.i_int = p_3D_output_format_values[i].i_value;
+        text.psz_string = vlc_gettext( p_3D_output_format_values[i].psz_label );
+        var_Change( p_vout, "video-stereo-mode", VLC_VAR_ADDCHOICE, &val, &text );
+    }
 
     /* Crop offset vars */
     var_Create( p_vout, "crop-left", VLC_VAR_INTEGER | VLC_VAR_ISCOMMAND );
