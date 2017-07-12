@@ -480,6 +480,10 @@ void vout_ControlChangeWindowState(vout_thread_t *vout, unsigned st)
 {
     vout_control_PushInteger(&vout->p->control, VOUT_CONTROL_WINDOW_STATE, st);
 }
+void vout_ControlChangeMultiview(vout_thread_t *vout, vlc_stereoscopic_3d_output_t format)
+{
+    vout_control_PushInteger(&vout->p->control, VOUT_CONTROL_CHANGE_MULTIVIEW, format);
+}
 void vout_ControlChangeDisplayFilled(vout_thread_t *vout, bool is_filled)
 {
     vout_control_PushBool(&vout->p->control, VOUT_CONTROL_DISPLAY_FILLED,
@@ -1302,6 +1306,11 @@ static void ThreadChangeWindowState(vout_thread_t *vout, unsigned state)
 #endif
 }
 
+ static void ThreadChangeMultiview(vout_thread_t *vout, vlc_stereoscopic_3d_output_t format)
+ {
+    vout_SetMultiview(vout->p->display.vd, format);
+ }
+
 static void ThreadChangeWindowMouse(vout_thread_t *vout,
                                     const vout_window_mouse_event_t *mouse)
 {
@@ -1651,6 +1660,9 @@ static int ThreadControl(vout_thread_t *vout, vout_control_cmd_t cmd)
         break;
     case VOUT_CONTROL_WINDOW_STATE:
         ThreadChangeWindowState(vout, cmd.u.integer);
+        break;
+    case VOUT_CONTROL_CHANGE_MULTIVIEW:
+        ThreadChangeMultiview(vout, cmd.u.integer);
         break;
     case VOUT_CONTROL_WINDOW_MOUSE:
         ThreadChangeWindowMouse(vout, &cmd.u.window_mouse);

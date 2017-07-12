@@ -141,6 +141,7 @@ struct vout_thread_sys_t
 /* TODO to move them to vlc_vout.h */
 void vout_ControlChangeFullscreen(vout_thread_t *, bool fullscreen);
 void vout_ControlChangeWindowState(vout_thread_t *, unsigned state);
+void vout_ControlChangeMultiview(vout_thread_t *vout, vlc_stereoscopic_3d_output_t format);
 void vout_ControlChangeDisplayFilled(vout_thread_t *, bool is_filled);
 void vout_ControlChangeZoom(vout_thread_t *, int num, int den);
 void vout_ControlChangeSampleAspectRatio(vout_thread_t *, unsigned num, unsigned den);
