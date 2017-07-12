@@ -46,6 +46,18 @@
 static const char *const ppsz_snap_formats[] =
 { "png", "jpg", "tiff" };
 
+#define VIDEO_STEREO_FORMAT_TEXT      N_("Video Stereo 3D file format")
+#define VIDEO_STEREO_FORMAT_TEXT_LONGTEXT  N_("Set the Video Stereo 3D file format manually"\
+                                "Autodetect, Stereo, Left Only, Right Only")
+
+static const int video_stereo_formats[] = {
+    VIDEO_STEREO_OUTPUT_AUTO, VIDEO_STEREO_OUTPUT_STEREO,
+    VIDEO_STEREO_OUTPUT_LEFT_ONLY, VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
+};
+static const char *const video_stereo_formats_text[] = {
+     N_("Auto-detect"), N_("Stereo"), N_("Left Only"), N_("Right Only"),
+};
+
 /*****************************************************************************
  * Configuration options for the core module. Each module will also separatly
  * define its own configuration options.
@@ -1548,6 +1560,10 @@ vlc_module_begin ()
 
     add_bool( "video-title-show", 1, VIDEO_TITLE_SHOW_TEXT,
               VIDEO_TITLE_SHOW_LONGTEXT, false )
+    add_integer ("video-stereo-mode", VIDEO_STEREO_OUTPUT_AUTO, VIDEO_STEREO_FORMAT_TEXT,
+                 VIDEO_STEREO_FORMAT_TEXT_LONGTEXT, false)
+        change_integer_list (video_stereo_formats, video_stereo_formats_text)
+
         change_safe()
     add_integer( "video-title-timeout", 5000, VIDEO_TITLE_TIMEOUT_TEXT,
                  VIDEO_TITLE_TIMEOUT_LONGTEXT, false )

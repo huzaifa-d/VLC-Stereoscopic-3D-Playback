@@ -233,6 +233,12 @@ typedef enum video_multiview_mode_t
     MULTIVIEW_STEREO_CHECKERBOARD,
 } video_multiview_mode_t;
 
+typedef enum vlc_stereoscopic_3d_output_t{
+    VIDEO_STEREO_OUTPUT_AUTO,
+    VIDEO_STEREO_OUTPUT_STEREO,
+    VIDEO_STEREO_OUTPUT_LEFT_ONLY,
+    VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
+} vlc_stereoscopic_3d_output_t;
 /**
  * Video projection mode.
  */
