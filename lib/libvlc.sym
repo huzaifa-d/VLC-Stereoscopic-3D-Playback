@@ -261,6 +261,7 @@ libvlc_video_get_title_description
 libvlc_video_get_track
 libvlc_video_get_track_count
 libvlc_video_get_track_description
+libvlc_video_get_video_stereo_mode
 libvlc_video_get_width
 libvlc_video_set_adjust_float
 libvlc_video_set_adjust_int
@@ -282,6 +283,7 @@ libvlc_video_set_spu_delay
 libvlc_video_set_subtitle_file
 libvlc_video_set_teletext
 libvlc_video_set_track
+libvlc_video_set_video_stereo_mode
 libvlc_video_take_snapshot
 libvlc_video_new_viewpoint
 libvlc_video_update_viewpoint
