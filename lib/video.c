@@ -284,6 +284,26 @@ void libvlc_video_set_aspect_ratio( libvlc_media_player_t *p_mi,
     free (pp_vouts);
 }
 
+int libvlc_video_get_video_stereo_mode(libvlc_media_player_t *p_mi)
+{
+    return var_GetInteger(p_mi, "video-stereo-mode");
+}
+
+void libvlc_video_set_video_stereo_mode(libvlc_media_player_t *p_mi,
+    const int i_video_stereo_mode)
+{
+    input_thread_t *p_input_thread = libvlc_get_input_thread(p_mi);
+
+    if (p_input_thread)
+    {
+        var_SetInteger(p_input_thread, "video-stereo-mode", i_video_stereo_mode);
+        vlc_object_release(p_input_thread);
+    }
+    else
+    {
+        libvlc_printerr("No active input");
+    }
+}
 libvlc_video_viewpoint_t *libvlc_video_new_viewpoint(void)
 {
     libvlc_video_viewpoint_t *p_vp = malloc(sizeof *p_vp);
