@@ -1178,6 +1178,23 @@ LIBVLC_API char *libvlc_video_get_aspect_ratio( libvlc_media_player_t *p_mi );
 LIBVLC_API void libvlc_video_set_aspect_ratio( libvlc_media_player_t *p_mi, const char *psz_aspect );
 
 /**
+ * Get current video stereo mode.
+ *
+ * \param p_mi the media player
+ * \return the video stereo mode or NULL if unspecified
+ * (the result must be released with free() or libvlc_free()).
+ */
+LIBVLC_API int libvlc_video_get_video_stereo_mode( libvlc_media_player_t *p_mi );
+
+/**
+ * Set new video stereo mode.
+ *
+ * \param p_mi the media player
+ * \param i_video_stereo_mode new video stereo mode
+ */
+LIBVLC_API void libvlc_video_set_video_stereo_mode( libvlc_media_player_t *p_mi, const int i_video_stereo_mode);
+
+/**
  * Create a video viewpoint structure.
  *
  * \version LibVLC 3.0.0 and later
