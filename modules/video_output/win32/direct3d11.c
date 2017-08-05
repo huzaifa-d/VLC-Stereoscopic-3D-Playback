@@ -350,6 +350,17 @@ static const char* globPixelShaderDefault = "\
       return x;\
   }\
   \
+  float2 barrel(float2 v, float2 center)\
+  {\
+      float2 distortion = float2(0.441, 0.156);\
+      float2 w = v - center;\
+      float val = dot(w, w);\
+      return (1.0 + (distortion.x + distortion.y * val) * val) * w + center;\
+  }\
+  float4 CardboardDistortion(PS_INPUT In, float4 sample)\
+  {\
+      %s\
+  }\
   inline float3 sourceToLinear(float3 rgb) {\
       %s;\
   }\
@@ -375,6 +386,11 @@ static const char* globPixelShaderDefault = "\
     float4 sample;\
     \
     %s /* sampling routine in sample */\
+    sample = CardboardDistortion(In, sample);\
+    /* This is a hack to prevent further processing if the\
+    output is the black cardboard outline*/\
+    if (sample.a == -7.7)\
+        return float4(0.0, 0.0, 0.0, 1.0);\
     float4 rgba = mul(mul(sample, WhitePoint), Colorspace);\
     float opacity = rgba.a * Opacity;\
     float3 rgb = (float3)rgba;\
@@ -1471,6 +1487,17 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             UpdatePicQuadPosition(vd);
         }
 #endif
+        else if (video_stereo_output == VIDEO_STEREO_OUTPUT_CARDBOARD)
+        {
+            ID3D11PixelShader_Release(sys->picQuadPixelShader);
+            sys->picQuadPixelShader = NULL;
+            HRESULT hr = CompilePixelShader(vd, sys->picQuadConfig, vd->fmt.transfer, vd->fmt.b_color_range_full, &sys->picQuadPixelShader);
+            if (FAILED(hr))
+            {
+                msg_Err(vd, "Failed to create the pixel shader. (hr=0x%lX)", hr);
+            }
+            sys->picQuad.d3dpixelShader = sys->picQuadPixelShader;
+        }
     }
 
     if (subpicture) {
@@ -2241,6 +2268,7 @@ static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format
                                   ID3D11PixelShader **output)
 {
     vout_display_sys_t *sys = vd->sys;
+    int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
 
     static const char *DEFAULT_NOOP = "return rgb";
     const char *psz_sampler;
@@ -2249,6 +2277,7 @@ static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format
     const char *psz_tone_mapping      = DEFAULT_NOOP;
     const char *psz_peak_luminance    = DEFAULT_NOOP;
     const char *psz_adjust_range      = DEFAULT_NOOP;
+    const char *psz_cardboard_transform = "return sample;";
     char *psz_luminance = NULL;
     char *psz_range = NULL;
 
@@ -2283,6 +2312,85 @@ static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format
         break;
     default:
         vlc_assert_unreachable();
+    }
+
+
+    if (video_stereo_output == VIDEO_STEREO_OUTPUT_CARDBOARD)
+    {
+        switch (sys->source_3d_format)
+        {
+            case MULTIVIEW_2D:
+            if (format->formatTexture == DXGI_FORMAT_NV12 || format->formatTexture == DXGI_FORMAT_P010)
+            {
+                psz_cardboard_transform =
+                    "bool isLeft = (In.Texture.x < 0.5);\
+                    float offset = isLeft ? 0.0 : 0.5;\
+                    float2 leftCenter = float2(0.5, 0.5);\
+                    float2 rightCenter = float2(0.5, 0.5);\
+                    float2 dis = barrel(float2((In.Texture.x - offset) / 0.5, In.Texture.y), isLeft ? leftCenter : rightCenter);\
+                    \
+                    if (dis.x < 0.0 || dis.x > 1.0 || dis.y < 0.0 || dis.y > 1.0)\
+                        return float4(0.0, 0.0, 0.0, -7.7);\
+                    else\
+                    {\
+                        sample.x  = shaderTexture[0].Sample(SampleType, float3(dis.x - In.Texture.x,\
+                                                                dis.y - In.Texture.y, 0.0) + In.Texture).x;\
+                        sample.yz = shaderTexture[1].Sample(SampleType, float3(dis.x - In.Texture.x,\
+                                                                dis.y - In.Texture.y, 0.0) + In.Texture).xy;\
+                        sample.a  = 1;\
+                        return sample;\
+                   }";
+            }
+                break;
+            case MULTIVIEW_STEREO_SBS:
+            if (format->formatTexture == DXGI_FORMAT_NV12 || format->formatTexture == DXGI_FORMAT_P010)
+            {
+                psz_cardboard_transform =
+                    "bool isLeft = (In.Texture.x < 0.5);\
+                    float offset = isLeft ? 0.0 : 0.5;\
+                    float2 leftCenter = float2(0.5, 0.5);\
+                    float2 rightCenter = float2(0.5, 0.5);\
+                    float2 dis = barrel(float2((In.Texture.x - offset) / 0.5, In.Texture.y), isLeft ? leftCenter : rightCenter);\
+                    \
+                    if (dis.x < 0.0 || dis.x > 1.0 || dis.y < 0.0 || dis.y > 1.0)\
+                        return float4(0.0, 0.0, 0.0, -7.7);\
+                    else\
+                    {\
+                        sample.x  = shaderTexture[0].Sample(SampleType, float3(dis.x * 0.5 + offset - In.Texture.x,\
+                                                                dis.y - In.Texture.y, 0.0) + In.Texture).x;\
+                        sample.yz = shaderTexture[1].Sample(SampleType, float3(dis.x * 0.5 + offset - In.Texture.x,\
+                                                                dis.y - In.Texture.y, 0.0) + In.Texture).xy;\
+                        sample.a  = 1;\
+                        return sample;\
+                   }";
+            }
+                break;
+            case MULTIVIEW_STEREO_TB:
+            if (format->formatTexture == DXGI_FORMAT_NV12 || format->formatTexture == DXGI_FORMAT_P010)
+            {
+                psz_cardboard_transform =
+                    "bool isLeft = (In.Texture.x < 0.5);\
+                    float offset = isLeft ? 0.0 : 0.5;\
+                    float2 leftCenter = float2(0.5, 0.5);\
+                    float2 rightCenter = float2(0.5, 0.5);\
+                    float2 dis = barrel(float2((In.Texture.x - offset) / 0.5, In.Texture.y), isLeft ? leftCenter : rightCenter);\
+                    \
+                    if (dis.x < 0.0 || dis.x > 1.0 || dis.y < 0.0 || dis.y > 1.0)\
+                        return float4(0.0, 0.0, 0.0, -7.7);\
+                    else\
+                    {\
+                        sample.x  = shaderTexture[0].Sample(SampleType, float3(dis.x - In.Texture.x,\
+                                                                dis.y * 0.5 + offset - In.Texture.y, 0.0) + In.Texture).x;\
+                        sample.yz = shaderTexture[1].Sample(SampleType, float3(dis.x - In.Texture.x,\
+                                                                dis.y * 0.5 + offset - In.Texture.y, 0.0) + In.Texture).xy;\
+                        sample.a  = 1;\
+                    return sample;\
+                   }";
+            }
+                break;
+            default:
+                msg_Dbg(vd, "unhandled cardboard transform %d", transfer);
+        }
     }
 
     video_transfer_func_t src_transfer;
@@ -2473,7 +2581,8 @@ static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format
 
     char *shader = malloc(strlen(globPixelShaderDefault) + 32 + strlen(psz_sampler) +
                           strlen(psz_src_transform) + strlen(psz_display_transform) +
-                          strlen(psz_tone_mapping) + strlen(psz_peak_luminance) + strlen(psz_adjust_range));
+                          strlen(psz_tone_mapping) + strlen(psz_peak_luminance) +
+                          strlen(psz_adjust_range) + strlen(psz_cardboard_transform));
     if (!shader)
     {
         msg_Err(vd, "no room for the Pixel Shader");
@@ -2481,10 +2590,12 @@ static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format
         free(psz_range);
         return E_OUTOFMEMORY;
     }
-    sprintf(shader, globPixelShaderDefault, sys->legacy_shader ? "" : "Array", psz_src_transform,
-            psz_display_transform, psz_tone_mapping, psz_peak_luminance, psz_adjust_range, psz_sampler);
+    sprintf(shader, globPixelShaderDefault, sys->legacy_shader ? "" : "Array", psz_cardboard_transform,
+            psz_src_transform, psz_display_transform, psz_tone_mapping, psz_peak_luminance,
+            psz_adjust_range, psz_sampler);
 #ifndef NDEBUG
     if (!IsRGBShader(format)) {
+        msg_Dbg(vd,"psz_cardboard_transform %s", psz_cardboard_transform);
         msg_Dbg(vd,"psz_src_transform %s", psz_src_transform);
         msg_Dbg(vd,"psz_tone_mapping %s", psz_tone_mapping);
         msg_Dbg(vd,"psz_peak_luminance %s", psz_peak_luminance);

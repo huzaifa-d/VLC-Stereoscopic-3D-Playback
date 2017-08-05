@@ -91,6 +91,7 @@ static const struct
     { VIDEO_STEREO_OUTPUT_LEFT_ONLY, N_("Left Only") },
     { VIDEO_STEREO_OUTPUT_RIGHT_ONLY, N_("Right Only") },
     { VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE, N_("Side-by-Side") },
+    { VIDEO_STEREO_OUTPUT_CARDBOARD, N_("Cardboard") },
 };
 
 static const struct
