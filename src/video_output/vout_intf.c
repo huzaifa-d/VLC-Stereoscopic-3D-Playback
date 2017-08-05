@@ -84,12 +84,13 @@ static int ViewpointCallback( vlc_object_t *, char const *,
 static const struct
 {
     int i_value;
-    char psz_label[12];
+    char psz_label[13];
 } p_3D_output_format_values[] = {
     { VIDEO_STEREO_OUTPUT_AUTO, N_("Auto-detect") },
     { VIDEO_STEREO_OUTPUT_STEREO, N_("Stereo") },
     { VIDEO_STEREO_OUTPUT_LEFT_ONLY, N_("Left Only") },
     { VIDEO_STEREO_OUTPUT_RIGHT_ONLY, N_("Right Only") },
+    { VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE, N_("Side-by-Side") },
 };
 
 static const struct

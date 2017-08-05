@@ -238,6 +238,7 @@ typedef enum vlc_stereoscopic_3d_output_t{
     VIDEO_STEREO_OUTPUT_STEREO,
     VIDEO_STEREO_OUTPUT_LEFT_ONLY,
     VIDEO_STEREO_OUTPUT_RIGHT_ONLY,
+    VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE,
 } vlc_stereoscopic_3d_output_t;
 /**
  * Video projection mode.
