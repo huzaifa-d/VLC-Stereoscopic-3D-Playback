@@ -1216,6 +1216,11 @@ static int Control(vout_display_t *vd, int query, va_list args)
             sys->multiview_3d = sys->device_3d_capable;
             res = UpdateSwapChain(vd, sys->multiview_3d);
         }
+        else if (cfg->multiview_format == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE)
+        {
+            sys->multiview_3d = false;
+            res = UpdateSwapChain(vd, false);
+        }
 
         UpdateBackBuffer(vd);
         UpdatePicQuadPosition(vd);
@@ -1396,6 +1401,8 @@ static void DisplayPicture(vout_display_t *vd, ID3D11ShaderResourceView *resourc
                            d3d_quad_t *quad, bool is_subpicture)
 {
     vout_display_sys_t *sys = vd->sys;
+    int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
+    unsigned int index_count = sys->picQuad.indexCount;
 
     if (is_subpicture)
     {
@@ -1407,6 +1414,14 @@ static void DisplayPicture(vout_display_t *vd, ID3D11ShaderResourceView *resourc
         if (sys->multiview_3d)
         {
             DisplayD3DPicture(sys, &sys->picQuad, resourceView, RIGHT_EYE);
+        }
+        else if (video_stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE
+                      && (sys->source_3d_format == MULTIVIEW_2D || sys->source_3d_format == MULTIVIEW_UNKNOWN
+                      || sys->source_3d_format == MULTIVIEW_STEREO_TB))
+        {
+            //Because we cannot call DisplayD3DPicture without additional information and only need these two lines
+            ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &sys->picQuad.cropViewport[RIGHT_EYE]);
+            ID3D11DeviceContext_DrawIndexed(sys->d3dcontext, index_count, 0, 0);
         }
     }
 }
@@ -1937,8 +1952,35 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
     vout_display_sys_t *sys = vd->sys;
     int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
 
+    if (video_stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE && (sys->source_3d_format == MULTIVIEW_2D
+                                                                    || sys->source_3d_format == MULTIVIEW_UNKNOWN))
+    {
+        sys->picQuad.cropViewport[LEFT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped) / 2;
+        sys->picQuad.cropViewport[LEFT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport[LEFT_EYE].TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuad.cropViewport[LEFT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
+
+        sys->picQuad.cropViewport[RIGHT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped) / 2;
+        sys->picQuad.cropViewport[RIGHT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftX = RECTWidth(sys->sys.rect_dest_clipped) / 2;
+        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
+    }
+    else if (video_stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE && sys->source_3d_format == MULTIVIEW_STEREO_TB)
+    {
+        sys->picQuad.cropViewport[LEFT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped) / 2;
+        sys->picQuad.cropViewport[LEFT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuad.cropViewport[LEFT_EYE].TopLeftX = sys->sys.rect_dest_clipped.left;
+        sys->picQuad.cropViewport[LEFT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
+
+        sys->picQuad.cropViewport[RIGHT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped) / 2;
+        sys->picQuad.cropViewport[RIGHT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
+        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftX = RECTWidth(sys->sys.rect_dest_clipped) / 2;
+        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top - RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport[RIGHT_EYE].MinDepth = 0.0f;
+        sys->picQuad.cropViewport[RIGHT_EYE].MaxDepth = 1.0f;
+    }
     //Default 2D mode selection
-    if (!sys->multiview_3d)
+    else if (!sys->multiview_3d)
     {
         sys->picQuad.cropViewport[MONO_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped);
         sys->picQuad.cropViewport[MONO_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped);
