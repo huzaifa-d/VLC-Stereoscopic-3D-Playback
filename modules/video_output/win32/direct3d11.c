@@ -160,6 +160,7 @@ struct vout_display_sys_t
     /* copy from the decoder pool into picSquad before display
      * Uses a Texture2D with slices rather than a Texture2DArray for the decoder */
     bool                     legacy_shader;
+    bool                     cardboard_shader_used;
     bool                     multiview_3d;
     bool                     device_3d_capable;
     video_multiview_mode_t   source_3d_format;
@@ -244,6 +245,10 @@ static void UpdatePicQuadPosition(vout_display_t *);
 
 static int Control(vout_display_t *vd, int query, va_list args);
 static void Manage(vout_display_t *vd);
+
+static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format,
+                                  video_transfer_func_t transfer, bool src_full_range,
+                                  ID3D11PixelShader **output);
 
 /* TODO: Move to a direct3d11_shaders header */
 static const char* globVertexShaderFlat = "\
@@ -1199,6 +1204,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
     RECT before_src_clipped  = sys->sys.rect_src_clipped;
     RECT before_dest_clipped = sys->sys.rect_dest_clipped;
     RECT before_dest         = sys->sys.rect_dest;
+    HRESULT hr = S_OK;
 
     BEFORE_UPDATE_RECTS;
     int res = CommonControl( vd, query, args );
@@ -1216,8 +1222,24 @@ static int Control(vout_display_t *vd, int query, va_list args)
     else if (query == VOUT_DISPLAY_CHANGE_MULTIVIEW)
     {
         const vout_display_cfg_t *cfg = va_arg(args, const vout_display_cfg_t*);
+
+        if (cfg->multiview_format == VIDEO_STEREO_OUTPUT_CARDBOARD || sys->cardboard_shader_used)
+        {
+            sys->multiview_3d = false;
+            res = UpdateSwapChain(vd, false);
+            ID3D11PixelShader_Release(sys->picQuadPixelShader);
+            sys->picQuadPixelShader = NULL;
+            hr = CompilePixelShader(vd, sys->picQuadConfig, vd->fmt.transfer, vd->fmt.b_color_range_full, &sys->picQuadPixelShader);
+            if (FAILED(hr))
+            {
+                msg_Err(vd, "Failed to create the pixel shader. (hr=0x%lX)", hr);
+                return VLC_EGENERIC;
+            }
+            sys->picQuad.d3dpixelShader = sys->picQuadPixelShader;
+            sys->cardboard_shader_used = !sys->cardboard_shader_used;
+        }
         //Disable Stereoscopic 3D if 2D output is selected
-        if ((cfg->multiview_format == VIDEO_STEREO_OUTPUT_RIGHT_ONLY || cfg->multiview_format == VIDEO_STEREO_OUTPUT_LEFT_ONLY) ||
+        else if ((cfg->multiview_format == VIDEO_STEREO_OUTPUT_RIGHT_ONLY || cfg->multiview_format == VIDEO_STEREO_OUTPUT_LEFT_ONLY) ||
             (cfg->multiview_format == VIDEO_STEREO_OUTPUT_AUTO && sys->source_3d_format == MULTIVIEW_UNKNOWN))
         {
             if (sys->multiview_3d)
@@ -1799,6 +1821,8 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
        msg_Err(vd, "Could not get the DXGI Factory. (hr=0x%lX)", hr);
        return VLC_EGENERIC;
     }
+    //Re-set shader type used information
+    sys->cardboard_shader_used = false;
 
     //Disable 3D if not supported by the system
     sys->device_3d_capable = i_feature_level >= D3D_FEATURE_LEVEL_10_0 &&
