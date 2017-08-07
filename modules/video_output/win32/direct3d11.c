@@ -2893,7 +2893,7 @@ static void SetupQuadFlat(d3d_vertex_t *dst_data, const RECT *output,
 #define nbLatBands SPHERE_SLICES
 #define nbLonBands SPHERE_SLICES
 
-static void SetupQuadSphere(d3d_vertex_t *dst_data, WORD *triangle_pos)
+static void SetupQuadSphere(d3d_vertex_t *dst_data, WORD *triangle_pos, video_multiview_mode_t source_3d_format)
 {
     for (unsigned lat = 0; lat <= nbLatBands; lat++) {
         float theta = lat * (float) M_PI / nbLatBands;
@@ -2918,6 +2918,12 @@ static void SetupQuadSphere(d3d_vertex_t *dst_data, WORD *triangle_pos)
 
             dst_data[off1].texture.x = lon / (float) nbLonBands; // 0(left) to 1(right)
             dst_data[off1].texture.y = lat / (float) nbLatBands; // 0(top) to 1 (bottom)
+
+            if (source_3d_format == MULTIVIEW_STEREO_TB)
+            {
+                dst_data[off1].position.y = SPHERE_RADIUS * y / 2.0 ;
+                dst_data[off1].texture.y = (lat / (float) nbLatBands) / 2.0;
+            }
         }
     }
 
@@ -2996,6 +3002,7 @@ static bool UpdateQuadPosition( vout_display_t *vd, d3d_quad_t *quad,
                                 video_projection_mode_t projection,
                                 video_orientation_t orientation )
 {
+    int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
     vout_display_sys_t *sys = vd->sys;
     HRESULT hr;
     D3D11_MAPPED_SUBRESOURCE mappedResource;
@@ -3020,7 +3027,7 @@ static bool UpdateQuadPosition( vout_display_t *vd, d3d_quad_t *quad,
     if ( projection == PROJECTION_MODE_RECTANGULAR )
         SetupQuadFlat(dst_data, output, quad, triangle_pos, orientation);
     else
-        SetupQuadSphere(dst_data, triangle_pos);
+        SetupQuadSphere(dst_data, triangle_pos, sys->source_3d_format);
 
     ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer, 0);
     ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer, 0);
