@@ -89,10 +89,10 @@ vlc_module_end ()
 typedef struct
 {
     picture_sys_t             picSys;
-    ID3D11Buffer              *pVertexBuffer;
+    ID3D11Buffer              *pVertexBuffer[2];
     UINT                      vertexCount;
     ID3D11VertexShader        *d3dvertexShader;
-    ID3D11Buffer              *pIndexBuffer;
+    ID3D11Buffer              *pIndexBuffer[2];
     UINT                      indexCount;
     ID3D11Buffer              *pVertexShaderConstants;
     ID3D11Buffer              *pPixelShaderConstants[2];
@@ -164,6 +164,7 @@ struct vout_display_sys_t
     bool                     multiview_3d;
     bool                     device_3d_capable;
     video_multiview_mode_t   source_3d_format;
+    video_projection_mode_t  projection;
 
     // SPU
     vlc_fourcc_t             pSubpictureChromas[2];
@@ -946,7 +947,7 @@ static int UpdateSwapChain(vout_display_t *vd, bool switch_to_3d)
     scd.Width = vd->source.i_visible_width;
     scd.Height = vd->source.i_visible_height;
     scd.Format = DXGI_FORMAT_R8G8B8A8_UNORM; /* TODO: use DXGI_FORMAT_NV12 */
-    scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;    
+    scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
     scd.Stereo = switch_to_3d ? TRUE : FALSE;
     scd.Scaling = DXGI_SCALING_NONE;
     scd.Flags = 0;
@@ -1346,10 +1347,10 @@ static int Control(vout_display_t *vd, int query, va_list args)
             (cfg->multiview_format == VIDEO_STEREO_OUTPUT_AUTO && sys->source_3d_format == MULTIVIEW_2D))
         {
             if (sys->multiview_3d)
-            {                
+            {
                 sys->multiview_3d = false;
                 res = UpdateSwapChain(vd, false);
-            }            
+            }
         }
         else if ((cfg->multiview_format == VIDEO_STEREO_OUTPUT_AUTO && !sys->multiview_3d) ||
                 (cfg->multiview_format == VIDEO_STEREO_OUTPUT_STEREO))
@@ -1548,8 +1549,16 @@ static void DisplayD3DPicture(vout_display_sys_t *sys, d3d_quad_t *quad, ID3D11S
 
     /* Render the quad */
     /* vertex shader */
-    ID3D11DeviceContext_IASetVertexBuffers(sys->d3dcontext, 0, 1, &quad->pVertexBuffer, &stride, &offset);
-    ID3D11DeviceContext_IASetIndexBuffer(sys->d3dcontext, quad->pIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+    if (sys->projection == PROJECTION_MODE_EQUIRECTANGULAR)
+    {
+        ID3D11DeviceContext_IASetVertexBuffers(sys->d3dcontext, 0, 1, &quad->pVertexBuffer[eyeIndex], &stride, &offset);
+        ID3D11DeviceContext_IASetIndexBuffer(sys->d3dcontext, quad->pIndexBuffer[eyeIndex], DXGI_FORMAT_R16_UINT, 0);
+    }
+    else
+    {
+        ID3D11DeviceContext_IASetVertexBuffers(sys->d3dcontext, 0, 1, &quad->pVertexBuffer[MONO_EYE], &stride, &offset);
+        ID3D11DeviceContext_IASetIndexBuffer(sys->d3dcontext, quad->pIndexBuffer[MONO_EYE], DXGI_FORMAT_R16_UINT, 0);
+    }
     if ( quad->pVertexShaderConstants )
         ID3D11DeviceContext_VSSetConstantBuffers(sys->d3dcontext, 0, 1, &quad->pVertexShaderConstants);
 
@@ -1561,16 +1570,13 @@ static void DisplayD3DPicture(vout_display_sys_t *sys, d3d_quad_t *quad, ID3D11S
     ID3D11DeviceContext_PSSetConstantBuffers(sys->d3dcontext, 0, quad->PSConstantsCount, quad->pPixelShaderConstants);
     ID3D11DeviceContext_PSSetShaderResources(sys->d3dcontext, 0, D3D11_MAX_SHADER_VIEW, resourceView);
 
-    if (eyeIndex == LEFT_EYE)
-        ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &quad->cropViewport[LEFT_EYE]);
-    else
-        ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &quad->cropViewport[RIGHT_EYE]);
+    ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &quad->cropViewport[eyeIndex]);
 
     ID3D11DeviceContext_DrawIndexed(sys->d3dcontext, quad->indexCount, 0, 0);
 }
 
 static void DisplayPicture(vout_display_t *vd, ID3D11ShaderResourceView *resourceView[D3D11_MAX_SHADER_VIEW],
-                           d3d_quad_t *quad, bool is_subpicture)
+                           d3d_quad_t *quad, bool is_subpicture )
 {
     vout_display_sys_t *sys = vd->sys;
     int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
@@ -1611,16 +1617,19 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
     FLOAT blackRGBA[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     ID3D11DeviceContext_ClearRenderTargetView(sys->d3dcontext, sys->d3drenderTargetView[MONO_EYE], blackRGBA);
 
-    /* no ID3D11Device operations should come here */    
+    if (sys->d3drenderTargetView[RIGHT_EYE])
+        ID3D11DeviceContext_ClearRenderTargetView(sys->d3dcontext, sys->d3drenderTargetView[RIGHT_EYE], blackRGBA);
+
+    /* no ID3D11Device operations should come here */
 
     ID3D11DeviceContext_ClearDepthStencilView(sys->d3dcontext, sys->d3ddepthStencilView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
     /* Render the quad */
     if (!is_d3d11_opaque(picture->format.i_chroma) || sys->legacy_shader)
-        DisplayPicture(vd, sys->stagingSys.resourceView, NULL, false);
+        DisplayPicture(vd, sys->stagingSys.resourceView, &sys->picQuad, false);
     else {
         picture_sys_t *p_sys = ActivePictureSys(picture);
-        DisplayPicture(vd, p_sys->resourceView, NULL, false);
+        DisplayPicture(vd, p_sys->resourceView, &sys->picQuad, false);
     }
 
     if (subpicture) {
@@ -2179,7 +2188,8 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
 
         sys->picQuad.cropViewport[RIGHT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
         sys->picQuad.cropViewport[RIGHT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped);
-        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftX = sys->sys.rect_dest_clipped.left - RECTWidth(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftX = sys->projection == PROJECTION_MODE_EQUIRECTANGULAR ?
+                    sys->sys.rect_dest_clipped.left : sys->sys.rect_dest_clipped.left - RECTWidth(sys->sys.rect_dest_clipped);
         sys->picQuad.cropViewport[RIGHT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
         sys->picQuad.cropViewport[RIGHT_EYE].MinDepth = 0.0f;
         sys->picQuad.cropViewport[RIGHT_EYE].MaxDepth = 1.0f;
@@ -2195,7 +2205,8 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
         sys->picQuad.cropViewport[RIGHT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped);
         sys->picQuad.cropViewport[RIGHT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
         sys->picQuad.cropViewport[RIGHT_EYE].TopLeftX = sys->sys.rect_dest_clipped.left;
-        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top - RECTHeight(sys->sys.rect_dest_clipped);
+        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftY = sys->projection == PROJECTION_MODE_EQUIRECTANGULAR ?
+                    sys->sys.rect_dest_clipped.top : sys->sys.rect_dest_clipped.top - RECTHeight(sys->sys.rect_dest_clipped);
         sys->picQuad.cropViewport[RIGHT_EYE].MinDepth = 0.0f;
         sys->picQuad.cropViewport[RIGHT_EYE].MaxDepth = 1.0f;
     }
@@ -2222,6 +2233,7 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
             sys->picQuad.cropViewport[MONO_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
             sys->picQuad.cropViewport[MONO_EYE].TopLeftX = sys->sys.rect_dest_clipped.left;
             sys->picQuad.cropViewport[MONO_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
+
         }
         else
         {
@@ -3039,7 +3051,8 @@ static void SetupQuadFlat(d3d_vertex_t *dst_data, const RECT *output,
 #define nbLatBands SPHERE_SLICES
 #define nbLonBands SPHERE_SLICES
 
-static void SetupQuadSphere(d3d_vertex_t *dst_data, WORD *triangle_pos)
+static void SetupQuadSphere(d3d_vertex_t *dst_data, WORD *triangle_pos,
+                            video_multiview_mode_t source_3d_format, int eye_index)
 {
     for (unsigned lat = 0; lat <= nbLatBands; lat++) {
         float theta = lat * (float) M_PI / nbLatBands;
@@ -3064,6 +3077,20 @@ static void SetupQuadSphere(d3d_vertex_t *dst_data, WORD *triangle_pos)
 
             dst_data[off1].texture.x = lon / (float) nbLonBands; // 0(left) to 1(right)
             dst_data[off1].texture.y = lat / (float) nbLatBands; // 0(top) to 1 (bottom)
+
+            //Since we will need two spheres with half the textures for stereoscopic 3D
+            if (source_3d_format == MULTIVIEW_STEREO_SBS)
+            {
+               dst_data[off1].position.x = SPHERE_RADIUS * x / 2.0 ;
+               dst_data[off1].texture.x = (eye_index == LEFT_EYE) ? (lon / (float) nbLonBands) / 2.0
+                                                                     : ((lon / (float) nbLonBands) / 2.0) + 0.5;
+            }
+            else if (source_3d_format == MULTIVIEW_STEREO_TB)
+            {
+               dst_data[off1].position.y = SPHERE_RADIUS * y / 2.0 ;
+               dst_data[off1].texture.y = (eye_index == LEFT_EYE) ? (lat / (float) nbLatBands) / 2.0
+                                                                     : ((lat / (float) nbLatBands) / 2.0) + 0.5;
+            }
         }
     }
 
@@ -3114,7 +3141,7 @@ static bool AllocQuadVertices(vout_display_t *vd, d3d_quad_t *quad,
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-    hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &bd, NULL, &quad->pVertexBuffer);
+    hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &bd, NULL, &quad->pVertexBuffer[MONO_EYE]);
     if(FAILED(hr)) {
       msg_Err(vd, "Failed to create vertex buffer. (hr=%lX)", hr);
       return false;
@@ -3128,12 +3155,29 @@ static bool AllocQuadVertices(vout_display_t *vd, d3d_quad_t *quad,
         .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
     };
 
-    hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &quadDesc, NULL, &quad->pIndexBuffer);
+    hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &quadDesc, NULL, &quad->pIndexBuffer[MONO_EYE]);
     if(FAILED(hr)) {
         msg_Err(vd, "Could not create the quad indices. (hr=0x%lX)", hr);
         return false;
     }
 
+    //We need two spheres for stereoscopic 3D to display both eyes
+    if ((sys->source_3d_format == MULTIVIEW_STEREO_SBS || sys->source_3d_format == MULTIVIEW_STEREO_TB) &&
+        projection == PROJECTION_MODE_EQUIRECTANGULAR)
+    {
+        hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &bd, NULL, &quad->pVertexBuffer[RIGHT_EYE]);
+        if(FAILED(hr)) {
+          msg_Err(vd, "Failed to create vertex buffer. (hr=%lX)", hr);
+          return false;
+        }
+
+        hr = ID3D11Device_CreateBuffer(sys->d3ddevice, &quadDesc, NULL, &quad->pIndexBuffer[RIGHT_EYE]);
+        if(FAILED(hr)) {
+            msg_Err(vd, "Could not create the quad indices. (hr=0x%lX)", hr);
+            return false;
+        }
+
+    }
     return true;
 }
 
@@ -3144,32 +3188,63 @@ static bool UpdateQuadPosition( vout_display_t *vd, d3d_quad_t *quad,
 {
     vout_display_sys_t *sys = vd->sys;
     HRESULT hr;
-    D3D11_MAPPED_SUBRESOURCE mappedResource;
+    D3D11_MAPPED_SUBRESOURCE mappedResource[2];
+    d3d_vertex_t *dst_data[2];
+    WORD *triangle_pos[2];
+
 
     /* create the vertices */
-    hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+    hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer[MONO_EYE], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource[MONO_EYE]);
     if (FAILED(hr)) {
         msg_Err(vd, "Failed to lock the vertex buffer (hr=0x%lX)", hr);
         return false;
     }
-    d3d_vertex_t *dst_data = mappedResource.pData;
+    dst_data[MONO_EYE] = mappedResource[MONO_EYE].pData;
 
     /* create the vertex indices */
-    hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
+    hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer[MONO_EYE], 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource[MONO_EYE]);
     if (FAILED(hr)) {
         msg_Err(vd, "Failed to lock the index buffer (hr=0x%lX)", hr);
-        ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer, 0);
+        ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer[MONO_EYE], 0);
         return false;
     }
-    WORD *triangle_pos = mappedResource.pData;
+    triangle_pos[MONO_EYE] = mappedResource[MONO_EYE].pData;
+    sys->projection = projection;
+
+    //We need two spheres for stereoscopic 3D to display both eyes
+    if ((sys->source_3d_format == MULTIVIEW_STEREO_SBS || sys->source_3d_format == MULTIVIEW_STEREO_TB) &&
+        projection == PROJECTION_MODE_EQUIRECTANGULAR)
+    {
+        hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer[RIGHT_EYE],
+                                     0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource[RIGHT_EYE]);
+        if (FAILED(hr)) {
+            msg_Err(vd, "Failed to lock the vertex buffer (hr=0x%lX)", hr);
+            return false;
+        }
+        dst_data[RIGHT_EYE] = mappedResource[RIGHT_EYE].pData;
+
+        hr = ID3D11DeviceContext_Map(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer[RIGHT_EYE],
+                                     0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource[RIGHT_EYE]);
+        if (FAILED(hr)) {
+            msg_Err(vd, "Failed to lock the index buffer (hr=0x%lX)", hr);
+            ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer[RIGHT_EYE], 0);
+            return false;
+        }
+        triangle_pos[RIGHT_EYE] = mappedResource[RIGHT_EYE].pData;
+
+        SetupQuadSphere(dst_data[RIGHT_EYE], triangle_pos[RIGHT_EYE], sys->source_3d_format, RIGHT_EYE);
+        ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer[RIGHT_EYE], 0);
+        ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer[RIGHT_EYE], 0);
+
+    }
 
     if ( projection == PROJECTION_MODE_RECTANGULAR )
-        SetupQuadFlat(dst_data, output, quad, triangle_pos, orientation);
+        SetupQuadFlat(dst_data[MONO_EYE], output, quad, triangle_pos[MONO_EYE], orientation);
     else
-        SetupQuadSphere(dst_data, triangle_pos);
+        SetupQuadSphere(dst_data[MONO_EYE], triangle_pos[MONO_EYE], sys->source_3d_format, MONO_EYE);
 
-    ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer, 0);
-    ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer, 0);
+    ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pIndexBuffer[MONO_EYE], 0);
+    ID3D11DeviceContext_Unmap(sys->d3dcontext, (ID3D11Resource *)quad->pVertexBuffer[MONO_EYE], 0);
 
     return true;
 }
@@ -3353,16 +3428,27 @@ static void ReleaseQuad(d3d_quad_t *quad)
         ID3D11Buffer_Release(quad->pPixelShaderConstants[1]);
         quad->pPixelShaderConstants[1] = NULL;
     }
-    if (quad->pVertexBuffer)
+    if (quad->pVertexBuffer[MONO_EYE])
     {
-        ID3D11Buffer_Release(quad->pVertexBuffer);
-        quad->pVertexBuffer = NULL;
+        ID3D11Buffer_Release(quad->pVertexBuffer[MONO_EYE]);
+        quad->pVertexBuffer[MONO_EYE] = NULL;
     }
     quad->d3dvertexShader = NULL;
-    if (quad->pIndexBuffer)
+    if (quad->pIndexBuffer[MONO_EYE])
     {
-        ID3D11Buffer_Release(quad->pIndexBuffer);
-        quad->pIndexBuffer = NULL;
+        ID3D11Buffer_Release(quad->pIndexBuffer[MONO_EYE]);
+        quad->pIndexBuffer[MONO_EYE] = NULL;
+    }
+    if (quad->pVertexBuffer[RIGHT_EYE])
+    {
+        ID3D11Buffer_Release(quad->pVertexBuffer[RIGHT_EYE]);
+        quad->pVertexBuffer[RIGHT_EYE] = NULL;
+    }
+    quad->d3dvertexShader = NULL;
+    if (quad->pIndexBuffer[RIGHT_EYE])
+    {
+        ID3D11Buffer_Release(quad->pIndexBuffer[RIGHT_EYE]);
+        quad->pIndexBuffer[RIGHT_EYE] = NULL;
     }
     if (quad->pVertexShaderConstants)
     {
