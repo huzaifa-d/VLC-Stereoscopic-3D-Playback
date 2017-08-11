@@ -1980,6 +1980,13 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
             IDXGIFactory2_IsWindowedStereoEnabled(dxgifactory);
     sys->multiview_3d = sys->device_3d_capable;
 
+    if (fmt->multiview_mode == MULTIVIEW_STEREO_FRAME)
+    {
+        fmt->multiview_mode = MULTIVIEW_STEREO_SBS; /* force a filter for now */
+        fmt->i_visible_width = fmt->i_width + fmt->i_visible_width;
+        fmt->i_width         = fmt->i_width * 2;
+    }
+
     if (fmt->multiview_mode == MULTIVIEW_UNKNOWN || fmt->multiview_mode == MULTIVIEW_2D)
         sys->multiview_3d = false;
     scd.Stereo = sys->multiview_3d;
