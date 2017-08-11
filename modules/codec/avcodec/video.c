@@ -844,6 +844,9 @@ static void DecodeSidedata( decoder_t *p_dec, const AVFrame *frame, picture_t *p
 #endif
 
 #if LIBAVUTIL_VERSION_CHECK( 52, 20, 0, 58, 100 )
+//Clean this
+#define RIGHT_EYE_FIRST_FLAG 0x1
+#define CURRENT_FRAME_IS_FRAME0_FLAG 0x2
     const AVFrameSideData *p_stereo3d_data =
             av_frame_get_side_data( frame,
                                     AV_FRAME_DATA_STEREO3D );
@@ -878,6 +881,13 @@ static void DecodeSidedata( decoder_t *p_dec, const AVFrame *frame, picture_t *p
             p_pic->format.multiview_mode = MULTIVIEW_UNKNOWN;
             break;
         }
+        //Clean this
+        p_pic->format.b_multiview_right_eye_first = stereo_data->flags & RIGHT_EYE_FIRST_FLAG;
+        p_pic->format.b_multiview_is_frame0 = stereo_data->flags & CURRENT_FRAME_IS_FRAME0_FLAG;
+
+        p_dec->fmt_out.video.b_multiview_right_eye_first = p_pic->format.b_multiview_right_eye_first;
+        p_dec->fmt_out.video.b_multiview_is_frame0 = p_pic->format.b_multiview_is_frame0;
+
         p_dec->fmt_out.video.multiview_mode = p_pic->format.multiview_mode;
     }
 #endif
@@ -1515,13 +1525,12 @@ static enum PixelFormat ffmpeg_GetFormat( AVCodecContext *p_context,
     decoder_t *p_dec = p_context->opaque;
     decoder_sys_t *p_sys = p_dec->p_sys;
     video_format_t fmt;
-    size_t i;
 
     /* Enumerate available formats */
     enum PixelFormat swfmt = avcodec_default_get_format(p_context, pi_fmt);
     bool can_hwaccel = false;
 
-    for( i = 0; pi_fmt[i] != AV_PIX_FMT_NONE; i++ )
+    for( size_t i = 0; pi_fmt[i] != AV_PIX_FMT_NONE; i++ )
     {
         const AVPixFmtDescriptor *dsc = av_pix_fmt_desc_get(pi_fmt[i]);
         if (dsc == NULL)
@@ -1533,18 +1542,6 @@ static enum PixelFormat ffmpeg_GetFormat( AVCodecContext *p_context,
         if (hwaccel)
             can_hwaccel = true;
     }
-#if defined(_WIN32) && LIBAVUTIL_VERSION_CHECK(54, 13, 1, 24, 100)
-    enum PixelFormat p_fmts[i+1];
-    if (i > 1 && pi_fmt[0] == AV_PIX_FMT_DXVA2_VLD && pi_fmt[1] == AV_PIX_FMT_D3D11VA_VLD)
-    {
-        /* favor D3D11VA over DXVA2 as the order will decide which vout will be
-         * used */
-        memcpy(p_fmts, pi_fmt, sizeof(p_fmts));
-        p_fmts[0] = AV_PIX_FMT_D3D11VA_VLD;
-        p_fmts[1] = AV_PIX_FMT_DXVA2_VLD;
-        pi_fmt = p_fmts;
-    }
-#endif
 
     /* If the format did not actually change (e.g. seeking), try to reuse the
      * existing output format, and if present, hardware acceleration back-end.
