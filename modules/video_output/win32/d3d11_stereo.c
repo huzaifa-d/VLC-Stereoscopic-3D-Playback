@@ -55,6 +55,39 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
     /* TODO keep the left eye int p_previous before getting the right eye and return NULL */
     /* TODO if right eye and left eye have proper PTS, copy in p_outpic */
 
+    //Left frame first
+    if (!p_src->format.b_multiview_right_eye_first)
+    {
+        //Left frame
+        if (p_src->format.b_multiview_is_frame0)
+        {
+            //p_sys->p_previous = picture_Hold(p_src);
+            //return NULL;
+        }
+        //Right frame
+        else
+        {
+            //Don't release before displaying
+           ////picture_Release( p_sys->p_previous );
+        }
+    }
+    else
+    {
+        //Right frame
+        if (p_src->format.b_multiview_is_frame0)
+        {
+            //p_sys->p_previous = picture_Hold(p_src);
+            //return NULL;
+        }
+        //Left frame
+        else
+        {
+            //Don't release before displaying
+           ////picture_Release( p_sys->p_previous );
+        }
+    }
+
+
     picture_t *p_outpic = filter_NewPicture( p_filter );
     if( !p_outpic )
     {
@@ -62,12 +95,43 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
         return NULL;
     }
 
-    picture_CopyProperties( p_outpic, p_src );
+       picture_CopyProperties( p_outpic, p_src );
+       p_outpic->format.i_visible_width += p_outpic->format.i_width;
+       p_outpic->format.i_width *= 2;
+
+
+       picture_sys_t *p_outpic_sys = ActivePictureSys(p_outpic);
+
 
     if( p_sys->context_mutex != INVALID_HANDLE_VALUE )
         WaitForSingleObjectEx( p_sys->context_mutex, INFINITE, FALSE );
 
     /* TODO do the texture copying in here */
+    D3D11_BOX box = {
+        .top = 0,
+        .bottom = p_src->format.i_y_offset + p_src->format.i_visible_height,
+        .left = 0,
+        .right = p_src->format.i_x_offset + p_src->format.i_visible_width,
+        .back = 1,
+    };
+
+
+     //Copy left part
+    //if (p_outpic->date == p_sys->p_previous->date)
+     ID3D11DeviceContext_CopySubresourceRegion(p_outpic->p_sys->context,
+                                               p_outpic->p_sys->resource[KNOWN_DXGI_INDEX],
+                                                  0, 0, 0, 0,
+                                                  p_src_sys->resource[KNOWN_DXGI_INDEX],
+                                                  0, &box);
+
+     //Copy right part, and release the picture
+//     ID3D11DeviceContext_CopySubresourceRegion(p_outpic->p_sys->context,
+//                                                  p_outpic->p_sys->resource[KNOWN_DXGI_INDEX],
+//                                                  p_src->format.i_visible_width, 0, 0, 0,
+//                                                  p_src_sys->resource[KNOWN_DXGI_INDEX],
+//                                                  p_src_sys->slice_index, &box);
+
+//picture_Release( p_sys->p_previous )
 
     if( p_sys->context_mutex  != INVALID_HANDLE_VALUE )
         ReleaseMutex( p_sys->context_mutex );
