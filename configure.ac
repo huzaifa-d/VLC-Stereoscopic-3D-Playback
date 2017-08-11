@@ -3263,7 +3263,7 @@ AS_IF([test "${enable_directx}" != "no"], [
 
   dnl Direct3D11
   AC_CHECK_HEADERS(d3d11.h, [
-    VLC_ADD_PLUGIN([direct3d11 direct3d11_deinterlace direct3d11_adjust])
+    VLC_ADD_PLUGIN([direct3d11 direct3d11_deinterlace direct3d11_adjust direct3d11_stereo])
   ])
 
   dnl Direct3D9
