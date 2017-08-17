@@ -95,6 +95,8 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
         return NULL;
     }
 
+
+       //picture_CopyPixels(p_outpic, p_src);
        picture_CopyProperties( p_outpic, p_src );
        p_outpic->format.i_visible_width += p_outpic->format.i_width;
        p_outpic->format.i_width *= 2;
@@ -115,11 +117,14 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
         .back = 1,
     };
 
+    D3D11_TEXTURE2D_DESC texDesc;
+    ID3D11Texture2D_GetDesc(p_outpic->p_sys->texture[KNOWN_DXGI_INDEX], &texDesc);
+
 
      //Copy left part
     //if (p_outpic->date == p_sys->p_previous->date)
-     ID3D11DeviceContext_CopySubresourceRegion(p_outpic->p_sys->context,
-                                               p_outpic->p_sys->resource[KNOWN_DXGI_INDEX],
+     ID3D11DeviceContext_CopySubresourceRegion(p_src_sys->context,
+                                               p_outpic_sys->resource[KNOWN_DXGI_INDEX],
                                                   0, 0, 0, 0,
                                                   p_src_sys->resource[KNOWN_DXGI_INDEX],
                                                   0, &box);
@@ -131,7 +136,7 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
 //                                                  p_src_sys->resource[KNOWN_DXGI_INDEX],
 //                                                  p_src_sys->slice_index, &box);
 
-//picture_Release( p_sys->p_previous )
+//picture_Release(p_sys->p_previous);
 
     if( p_sys->context_mutex  != INVALID_HANDLE_VALUE )
         ReleaseMutex( p_sys->context_mutex );
