@@ -96,13 +96,7 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
     }
 
 
-       //picture_CopyPixels(p_outpic, p_src);
-       picture_CopyProperties( p_outpic, p_src );
-       p_outpic->format.i_visible_width += p_outpic->format.i_width;
-       p_outpic->format.i_width *= 2;
-
-
-       picture_sys_t *p_outpic_sys = ActivePictureSys(p_outpic);
+    picture_sys_t *p_outpic_sys = ActivePictureSys(p_outpic);
 
 
     if( p_sys->context_mutex != INVALID_HANDLE_VALUE )
