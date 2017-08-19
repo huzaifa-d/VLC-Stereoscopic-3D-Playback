@@ -47,6 +47,26 @@ struct filter_sys_t
     picture_t  *p_previous;
 };
 
+static void d3d11_pic_context_destroy(struct picture_context_t *opaque)
+{
+    struct va_pic_context *pic_ctx = (struct va_pic_context*)opaque;
+    ReleasePictureSys(&pic_ctx->picsys);
+    free(pic_ctx);
+}
+
+static struct picture_context_t *d3d11_pic_context_copy(struct picture_context_t *ctx)
+{
+    struct va_pic_context *src_ctx = (struct va_pic_context*)ctx;
+    struct va_pic_context *pic_ctx = calloc(1, sizeof(*pic_ctx));
+    if (unlikely(pic_ctx==NULL))
+        return NULL;
+    pic_ctx->s.destroy = d3d11_pic_context_destroy;
+    pic_ctx->s.copy    = d3d11_pic_context_copy;
+    pic_ctx->picsys = src_ctx->picsys;
+    AcquirePictureSys(&pic_ctx->picsys);
+    return &pic_ctx->s;
+}
+
 static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
 {
     filter_sys_t *p_sys = p_filter->p_sys;
@@ -98,6 +118,19 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
 
     picture_sys_t *p_outpic_sys = ActivePictureSys(p_outpic);
 
+
+    if (p_outpic->context == NULL)
+    {
+        struct va_pic_context *pic_ctx = calloc(1, sizeof(*pic_ctx));
+        if (likely(pic_ctx))
+        {
+            pic_ctx->s.destroy = d3d11_pic_context_destroy;
+            pic_ctx->s.copy    = d3d11_pic_context_copy;
+            pic_ctx->picsys = *p_outpic->p_sys;
+            AcquirePictureSys(&pic_ctx->picsys);
+            p_outpic->context = &pic_ctx->s;
+        }
+    }
 
     if( p_sys->context_mutex != INVALID_HANDLE_VALUE )
         WaitForSingleObjectEx( p_sys->context_mutex, INFINITE, FALSE );
