@@ -119,9 +119,9 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
     //if (p_outpic->date == p_sys->p_previous->date)
      ID3D11DeviceContext_CopySubresourceRegion(p_src_sys->context,
                                                p_outpic_sys->resource[KNOWN_DXGI_INDEX],
-                                                  0, 0, 0, 0,
+                                                  p_outpic_sys->slice_index, 0, 0, 0,
                                                   p_src_sys->resource[KNOWN_DXGI_INDEX],
-                                                  0, &box);
+                                                  p_src_sys->slice_index, &box);
 
      //Copy right part, and release the picture
 //     ID3D11DeviceContext_CopySubresourceRegion(p_outpic->p_sys->context,
