@@ -45,6 +45,8 @@ struct filter_sys_t
 {
     HANDLE     context_mutex;
     picture_t  *p_previous;
+    picture_t  *p_previous_full;
+    bool       have_left_frame, have_right_frame;
 };
 
 static void d3d11_pic_context_destroy(struct picture_context_t *opaque)
@@ -81,14 +83,15 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
         //Left frame
         if (p_src->format.b_multiview_is_frame0)
         {
-            //p_sys->p_previous = picture_Hold(p_src);
+            p_sys->p_previous = picture_Hold(p_src);
+            p_sys->have_left_frame = true;
             //return NULL;
         }
         //Right frame
         else
         {
+            p_sys->have_right_frame = true;
             //Don't release before displaying
-           ////picture_Release( p_sys->p_previous );
         }
     }
     else
@@ -96,14 +99,13 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
         //Right frame
         if (p_src->format.b_multiview_is_frame0)
         {
-            //p_sys->p_previous = picture_Hold(p_src);
-            //return NULL;
+            p_sys->p_previous = picture_Hold(p_src);
+            p_sys->have_right_frame = true;
         }
         //Left frame
         else
         {
-            //Don't release before displaying
-           ////picture_Release( p_sys->p_previous );
+            p_sys->have_left_frame = true;
         }
     }
 
@@ -149,21 +151,43 @@ static picture_t *Filter(filter_t *p_filter, picture_t *p_src)
 
 
      //Copy left part
-    //if (p_outpic->date == p_sys->p_previous->date)
-     ID3D11DeviceContext_CopySubresourceRegion(p_src_sys->context,
+    if (p_sys->have_left_frame && p_sys->have_right_frame && p_sys->p_previous)
+    {
+        //Join the pictures
+        picture_sys_t *p_prev_sys = ActivePictureSys(p_sys->p_previous);
+        ID3D11DeviceContext_CopySubresourceRegion(p_src_sys->context,
                                                p_outpic_sys->resource[KNOWN_DXGI_INDEX],
                                                   p_outpic_sys->slice_index, 0, 0, 0,
-                                                  p_src_sys->resource[KNOWN_DXGI_INDEX],
-                                                  p_src_sys->slice_index, &box);
+                                                  p_prev_sys->resource[KNOWN_DXGI_INDEX],
+                                                  p_prev_sys->slice_index, &box);
 
-     //Copy right part, and release the picture
-//     ID3D11DeviceContext_CopySubresourceRegion(p_outpic->p_sys->context,
-//                                                  p_outpic->p_sys->resource[KNOWN_DXGI_INDEX],
-//                                                  p_src->format.i_visible_width, 0, 0, 0,
-//                                                  p_src_sys->resource[KNOWN_DXGI_INDEX],
-//                                                  p_src_sys->slice_index, &box);
+        ID3D11DeviceContext_CopySubresourceRegion(p_src_sys->context,
+                                                  p_outpic_sys->resource[KNOWN_DXGI_INDEX],
+                                                     p_outpic_sys->slice_index, p_src->format.i_visible_width, 0, 0,
+                                                     p_src_sys->resource[KNOWN_DXGI_INDEX],
+                                                     p_src_sys->slice_index, &box);
 
-//picture_Release(p_sys->p_previous);
+        p_sys->have_left_frame = p_sys->have_right_frame = false;
+        picture_Release(p_sys->p_previous);
+        p_sys->p_previous_full = picture_Hold(p_outpic);
+    }
+    //Show old picture as we cannot return null when we have just have one frame
+    else
+    {
+        if (p_sys->p_previous_full)
+        {
+            p_src_sys = ActivePictureSys(p_sys->p_previous_full);
+        }
+        ID3D11DeviceContext_CopySubresourceRegion(p_src_sys->context,
+                                                  p_outpic_sys->resource[KNOWN_DXGI_INDEX],
+                                                     p_outpic_sys->slice_index, 0, 0, 0,
+                                                     p_src_sys->resource[KNOWN_DXGI_INDEX],
+                                                     p_src_sys->slice_index, &box);
+        if (p_sys->p_previous_full)
+        {
+            picture_Release(p_sys->p_previous_full);
+        }
+    }
 
     if( p_sys->context_mutex  != INVALID_HANDLE_VALUE )
         ReleaseMutex( p_sys->context_mutex );
