@@ -163,6 +163,12 @@ struct vout_display_sys_t
     bool                     cardboard_shader_used;
     bool                     multiview_3d;
     bool                     device_3d_capable;
+    bool                     have_left_frame;
+    bool                     have_right_frame;
+    bool                     frame_seq_left_first;
+	int                      frame_count;
+    picture_t                *p_previous;
+    picture_t                *p_older_frame;
     video_multiview_mode_t   source_3d_format;
 
     // SPU
@@ -871,6 +877,16 @@ static picture_pool_t *Pool(vout_display_t *vd, unsigned pool_size)
         if (AllocateShaderView(VLC_OBJECT(vd), sys->d3ddevice, sys->picQuadConfig,
                                textures, 0, sys->stagingSys.resourceView))
             goto error;
+
+        if (sys->source_3d_format == MULTIVIEW_STEREO_FRAME)
+        {
+            for (unsigned plane = 0; plane < D3D11_MAX_SHADER_VIEW; plane++)
+                sys->stagingSys[RIGHT_EYE].texture[plane] = textures[plane];
+
+            if (AllocateShaderView(VLC_OBJECT(vd), sys->d3ddevice, sys->picQuadConfig,
+                                   textures, 0, sys->stagingSys[RIGHT_EYE].resourceView))
+                goto error;
+        }
     } else
 #endif
     {
@@ -1460,11 +1476,6 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         }
         assert(box.right <= texDesc.Width);
         assert(box.bottom <= texDesc.Height);
-        ID3D11DeviceContext_CopySubresourceRegion(sys->d3dcontext,
-                                                  sys->stagingSys.resource[KNOWN_DXGI_INDEX],
-                                                  0, 0, 0, 0,
-                                                  p_sys->resource[KNOWN_DXGI_INDEX],
-                                                  p_sys->slice_index, &box);
     }
     else
     {
@@ -1476,6 +1487,7 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
              * display, do it preferrably when creating the texture */
             assert(p_sys->resourceView[0]!=NULL);
         }
+
 
         if ( sys->picQuad.i_height != texDesc.Height ||
              sys->picQuad.i_width != texDesc.Width )
@@ -1491,6 +1503,48 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             UpdateSize(vd);
         }
     }
+
+    if (picture->format.multiview_mode == MULTIVIEW_STEREO_FRAME)
+    {
+        sys->frame_count++;
+        //Left frame first
+        if (!picture->format.b_multiview_right_eye_first)
+        {
+            //Because we don't get this information in every frame
+            if (sys->frame_count%2)
+            {
+                sys->p_previous = picture_Hold(picture);
+                sys->have_left_frame = true;
+                msg_Info(vd, "In Prepare: Left frame");
+            }
+            //Right frame
+            else
+            {
+                sys->have_right_frame = true;
+                //Don't release before displaying
+                msg_Info(vd, "In Prepare: Right frame");
+            }
+        }
+        else
+        {
+            //Right frame
+            if (sys->frame_count%2)
+            {
+                sys->p_previous = picture_Hold(picture);
+                sys->have_right_frame = true;
+            }
+            //Left frame
+            else
+            {
+                sys->have_left_frame = true;
+            }
+        }
+
+
+
+
+    }
+
 
     if (sys->source_3d_format != picture->format.multiview_mode && picture->format.multiview_mode != MULTIVIEW_UNKNOWN)
     {
@@ -1574,7 +1628,7 @@ static void DisplayD3DPicture(vout_display_sys_t *sys, d3d_quad_t *quad, ID3D11S
 }
 
 static void DisplayPicture(vout_display_t *vd, ID3D11ShaderResourceView *resourceView[D3D11_MAX_SHADER_VIEW],
-                           d3d_quad_t *quad, bool is_subpicture)
+                           d3d_quad_t *quad, bool is_subpicture, int frame_sequential_eye_index)
 {
     vout_display_sys_t *sys = vd->sys;
     int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
@@ -1586,31 +1640,42 @@ static void DisplayPicture(vout_display_t *vd, ID3D11ShaderResourceView *resourc
     }
     else
     {
-        DisplayD3DPicture(sys, &sys->picQuad, resourceView, MONO_EYE);
-        if (sys->multiview_3d)
-        {
-            DisplayD3DPicture(sys, &sys->picQuad, resourceView, RIGHT_EYE);
-        }
-        else if (video_stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE
-                      && (sys->source_3d_format == MULTIVIEW_2D || sys->source_3d_format == MULTIVIEW_UNKNOWN
-                      || sys->source_3d_format == MULTIVIEW_STEREO_TB))
-        {
-            //Because we cannot call DisplayD3DPicture without additional information and only need these two lines
-            ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &sys->picQuad.cropViewport[RIGHT_EYE]);
-            ID3D11DeviceContext_DrawIndexed(sys->d3dcontext, index_count, 0, 0);
-        }
+		if (sys->source_3d_format == MULTIVIEW_STEREO_FRAME)
+		{
+            DisplayD3DPicture(sys, &sys->picQuad, resourceView, frame_sequential_eye_index);
+		}
+		else
+		{
+		    DisplayD3DPicture(sys, &sys->picQuad, resourceView, MONO_EYE);
+            if (sys->multiview_3d)
+            {
+                DisplayD3DPicture(sys, &sys->picQuad, resourceView, RIGHT_EYE);
+            }
+            else if (video_stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE
+                          && (sys->source_3d_format == MULTIVIEW_2D || sys->source_3d_format == MULTIVIEW_UNKNOWN
+                          || sys->source_3d_format == MULTIVIEW_STEREO_TB))
+            {
+                //Because we cannot call DisplayD3DPicture without additional information and only need these two lines
+                ID3D11DeviceContext_RSSetViewports(sys->d3dcontext, 1, &sys->picQuad.cropViewport[RIGHT_EYE]);
+                ID3D11DeviceContext_DrawIndexed(sys->d3dcontext, index_count, 0, 0);
+            }
+		}
+
     }
 }
 
 static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpicture)
 {
     vout_display_sys_t *sys = vd->sys;
+    picture_t *pic_release = picture;
 #ifdef HAVE_ID3D11VIDEODECODER
     if (sys->context_lock != INVALID_HANDLE_VALUE && is_d3d11_opaque(picture->format.i_chroma))
     {
         WaitForSingleObjectEx( sys->context_lock, INFINITE, FALSE );
     }
 #endif
+
+
 
     FLOAT blackRGBA[4] = {0.0f, 0.0f, 0.0f, 1.0f};
     ID3D11DeviceContext_ClearRenderTargetView(sys->d3dcontext, sys->d3drenderTargetView[MONO_EYE], blackRGBA);
@@ -1621,10 +1686,70 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
 
     /* Render the quad */
     if (!is_d3d11_opaque(picture->format.i_chroma) || sys->legacy_shader)
-        DisplayPicture(vd, sys->stagingSys.resourceView, NULL, false);
+        DisplayPicture(vd, sys->stagingSys.resourceView, NULL, false, MONO_EYE);
     else {
-        picture_sys_t *p_sys = ActivePictureSys(picture);
-        DisplayPicture(vd, p_sys->resourceView, NULL, false);
+        if (sys->source_3d_format == MULTIVIEW_STEREO_FRAME)
+        {
+            picture_sys_t *p_sys = ActivePictureSys(picture);
+
+            if (sys->have_left_frame && sys->have_right_frame)
+            {
+                msg_Info(vd, "In Display: Both frames");
+                picture_sys_t *p_left_sys;
+                picture_sys_t *p_right_sys;
+                //Left part first
+                 if (!picture->format.b_multiview_right_eye_first)
+                 {
+                     p_left_sys = ActivePictureSys(sys->p_previous);
+                     p_right_sys = p_sys;
+                     sys->p_older_frame = picture_Hold(picture);
+                     pic_release = sys->p_previous;
+                 }
+                 else
+                 {
+                     p_right_sys = ActivePictureSys(sys->p_previous);
+                     p_left_sys = p_sys;
+                     sys->p_older_frame = picture_Hold(picture);
+                     pic_release = sys->p_previous;
+                 }
+                 sys->have_left_frame = sys->have_right_frame = false;
+
+                 DisplayPicture(vd, p_left_sys->resourceView, NULL, false, LEFT_EYE);
+                 DisplayPicture(vd, p_right_sys->resourceView, NULL, false, RIGHT_EYE);
+                 //picture_Release(!picture->format.b_multiview_right_eye_first)sys->p_previous);
+            }
+            else
+            {
+                msg_Info(vd, "In Display: Single frame");
+                if (!sys->p_older_frame)
+                {
+                    sys->p_older_frame = picture;
+                    pic_release = picture;
+                }
+                picture_sys_t *p_prev_full_sys = ActivePictureSys(sys->p_older_frame);
+                //Left part first
+                 if (!picture->format.b_multiview_right_eye_first)
+                 {
+                     DisplayPicture(vd, p_sys->resourceView, NULL, false, LEFT_EYE);
+                     DisplayPicture(vd, p_prev_full_sys->resourceView, NULL, false, RIGHT_EYE);
+                 }
+                 else
+                 {
+                     DisplayPicture(vd, p_prev_full_sys->resourceView, NULL, false, LEFT_EYE);
+                     DisplayPicture(vd, p_sys->resourceView, NULL, false, RIGHT_EYE);
+                 }
+                //DisplayPicture(vd, p_prev_full_sys->resourceView, NULL, false, MONO_EYE);
+                //picture_Release(sys->p_older_frame);
+                pic_release = sys->p_older_frame;
+            }
+
+        }
+        else
+        {
+            picture_sys_t *p_sys = ActivePictureSys(picture);
+            DisplayPicture(vd, p_sys->resourceView, NULL, false, MONO_EYE);
+        }
+
     }
 
     if (subpicture) {
@@ -1633,7 +1758,7 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
             if (sys->d3dregions[i])
             {
                 d3d_quad_t *quad = (d3d_quad_t *) sys->d3dregions[i]->p_sys;
-                DisplayPicture(vd, quad->picSys.resourceView, quad, true);
+                DisplayPicture(vd, quad->picSys.resourceView, quad, true, MONO_EYE);
             }
         }
     }
@@ -1672,8 +1797,9 @@ static void Display(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
         /* TODO device lost */
         msg_Dbg(vd, "SwapChain Present failed. (hr=0x%lX)", hr);
     }
-
-    picture_Release(picture);
+    //Since we don't want to lose the first frame
+    if (sys->frame_count != 1)
+    picture_Release(pic_release);
     if (subpicture)
         subpicture_Delete(subpicture);
 
@@ -1980,9 +2106,9 @@ static int Direct3D11Open(vout_display_t *vd, video_format_t *fmt)
 
     if (fmt->multiview_mode == MULTIVIEW_STEREO_FRAME)
     {
-        fmt->multiview_mode = MULTIVIEW_STEREO_SBS; /* force a filter for now */
-        fmt->i_visible_width = fmt->i_width + fmt->i_visible_width;
-        fmt->i_width         = fmt->i_width * 2;
+        //fmt->multiview_mode = MULTIVIEW_STEREO_SBS; /* force a filter for now */
+        //fmt->i_visible_width = fmt->i_width + fmt->i_visible_width;
+        //fmt->i_width         = fmt->i_width * 2;
     }
 
     if (fmt->multiview_mode == MULTIVIEW_UNKNOWN || fmt->multiview_mode == MULTIVIEW_2D)
@@ -2211,8 +2337,23 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
         sys->picQuad.cropViewport[RIGHT_EYE].MinDepth = 0.0f;
         sys->picQuad.cropViewport[RIGHT_EYE].MaxDepth = 1.0f;
     }
-    else if ( video_stereo_output == VIDEO_STEREO_OUTPUT_STEREO && (sys->source_3d_format == MULTIVIEW_2D ||
-                                                                    sys->source_3d_format == MULTIVIEW_UNKNOWN))
+//	    else if (sys->source_3d_format == MULTIVIEW_STEREO_FRAME)
+//    {
+//        sys->picQuad.cropViewport[LEFT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped);
+//        sys->picQuad.cropViewport[LEFT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
+//        sys->picQuad.cropViewport[LEFT_EYE].TopLeftX = sys->sys.rect_dest_clipped.left;
+//        sys->picQuad.cropViewport[LEFT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
+
+//        sys->picQuad.cropViewport[RIGHT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped);
+//        sys->picQuad.cropViewport[RIGHT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped) * 2;
+//        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftX = sys->sys.rect_dest_clipped.left;
+//        sys->picQuad.cropViewport[RIGHT_EYE].TopLeftY = sys->sys.rect_dest_clipped.top - RECTHeight(sys->sys.rect_dest_clipped);
+//        sys->picQuad.cropViewport[RIGHT_EYE].MinDepth = 0.0f;
+//        sys->picQuad.cropViewport[RIGHT_EYE].MaxDepth = 1.0f;
+//    }
+    else if (sys->source_3d_format == MULTIVIEW_STEREO_FRAME || 
+	    (video_stereo_output == VIDEO_STEREO_OUTPUT_STEREO && 
+		(sys->source_3d_format == MULTIVIEW_2D || sys->source_3d_format == MULTIVIEW_UNKNOWN))) 
     {
         sys->picQuad.cropViewport[LEFT_EYE].Width    = sys->picQuad.cropViewport[RIGHT_EYE].Width =
                 RECTWidth(sys->sys.rect_dest_clipped);
