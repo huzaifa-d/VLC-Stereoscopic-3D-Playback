@@ -1,3 +1,33 @@
+README for work done as a part of Google Summer of Code 2017
+============================================================
+
+This readme has been modified to add information for the GSoC project.
+
+As part of the "Adding 3D support" for VLC, primarily core playback support was 
+added for tagged 3D files (Side-by-side & Top-Bottom). Secondary milestones include:
+a. playback support for libVLC (Windows Universal Platform)
+b. playback support for Stereoscopic 3D + 360 files 
+c. Side-by-side output for 2D files
+d. "Cardboard" output for VR viewing of 3D files.
+
+For the implementation, a new menu option "3D Output" is available under Video. 
+The options include:
+1. Auto-detect - If a 3D file is detected, and 3D is enabled on the system,
+the output is stereoscopic 3D.
+2. Stereo - Forcing a 3D output.
+3. Left only - Showing only the frames for the left in 2D (Left frame for 
+Side-by-side format, Top frame for Top-Bottom format)
+4. Right only - Like Left only but with right/bottom frame.
+5. Side-by-side - Shows a 2D file side by side, to for example show 2D on 3D TVs.
+3D files are shown as the original in 2D.
+6. Cardboard - Outputs 2D and 3D files with a lens distoriton to be displayed 
+as stereoscopic on Cardboard (VR) headsets.
+Stereoscopic 3D + 360 files are displayed in 3D directly on automatic detection.
+
+Note: The branch is rebased from the lastest master as on 26th August, 2017.
+Please refer to individual commits for a patch-by-patch breakdown of the project. 
+
+
 README for the VLC media player
 ===============================
 
