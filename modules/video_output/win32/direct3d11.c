@@ -1287,6 +1287,22 @@ static void UpdateSize(vout_display_t *vd)
 #endif
 }
 
+static vlc_stereoscopic_3d_output_t GetStereoMode(vout_display_t *vd, vlc_stereoscopic_3d_output_t stereo_output)
+{
+    vout_display_sys_t *sys = vd->sys;
+    if (stereo_output == VIDEO_STEREO_OUTPUT_AUTO)
+    {
+        /* decide which mode we're going with */
+        if (sys->source_3d_format == MULTIVIEW_2D)
+            stereo_output = VIDEO_STEREO_OUTPUT_AUTO;
+        else if (sys->device_3d_capable)
+            stereo_output = VIDEO_STEREO_OUTPUT_STEREO;
+        else
+            stereo_output = VIDEO_STEREO_OUTPUT_LEFT_ONLY;
+    }
+    return stereo_output;
+}
+
 static inline bool RectEquals(const RECT *r1, const RECT *r2)
 {
     return r1->bottom == r2->bottom && r1->top == r2->top &&
@@ -1326,8 +1342,9 @@ static int Control(vout_display_t *vd, int query, va_list args)
     else if (query == VOUT_DISPLAY_CHANGE_MULTIVIEW)
     {
         const vout_display_cfg_t *cfg = va_arg(args, const vout_display_cfg_t*);
+        vlc_stereoscopic_3d_output_t stereo_output = GetStereoMode(vd, cfg->multiview_format);
 
-        if (cfg->multiview_format == VIDEO_STEREO_OUTPUT_CARDBOARD || sys->cardboard_shader_used)
+        if (stereo_output == VIDEO_STEREO_OUTPUT_CARDBOARD || sys->cardboard_shader_used)
         {
             sys->multiview_3d = false;
             res = UpdateSwapChain(vd, false);
@@ -1343,8 +1360,7 @@ static int Control(vout_display_t *vd, int query, va_list args)
             sys->cardboard_shader_used = !sys->cardboard_shader_used;
         }
         //Disable Stereoscopic 3D if 2D output is selected
-        else if ((cfg->multiview_format == VIDEO_STEREO_OUTPUT_RIGHT_ONLY || cfg->multiview_format == VIDEO_STEREO_OUTPUT_LEFT_ONLY) ||
-            (cfg->multiview_format == VIDEO_STEREO_OUTPUT_AUTO && sys->source_3d_format == MULTIVIEW_2D))
+        else if (stereo_output == VIDEO_STEREO_OUTPUT_RIGHT_ONLY || stereo_output == VIDEO_STEREO_OUTPUT_LEFT_ONLY)
         {
             if (sys->multiview_3d)
             {
@@ -1352,13 +1368,12 @@ static int Control(vout_display_t *vd, int query, va_list args)
                 res = UpdateSwapChain(vd, false);
             }
         }
-        else if ((cfg->multiview_format == VIDEO_STEREO_OUTPUT_AUTO && !sys->multiview_3d) ||
-                (cfg->multiview_format == VIDEO_STEREO_OUTPUT_STEREO))
+        else if (stereo_output == VIDEO_STEREO_OUTPUT_STEREO)
         {
             sys->multiview_3d = sys->device_3d_capable;
             res = UpdateSwapChain(vd, sys->multiview_3d);
         }
-        else if (cfg->multiview_format == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE)
+        else if (stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE)
         {
             sys->multiview_3d = false;
             res = UpdateSwapChain(vd, false);
@@ -1491,12 +1506,11 @@ static void Prepare(vout_display_t *vd, picture_t *picture, subpicture_t *subpic
 
     if (sys->source_3d_format != picture->format.multiview_mode)
     {
-        int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
         sys->source_3d_format = picture->format.multiview_mode;
         //We need this as we need cardboard mode but not 3D in UWP
+        vlc_stereoscopic_3d_output_t video_stereo_output = GetStereoMode(vd, var_InheritInteger (vd, "video-stereo-mode"));
 #if !VLC_WINSTORE_APP
-        if ((sys->source_3d_format == MULTIVIEW_STEREO_SBS || sys->source_3d_format == MULTIVIEW_STEREO_TB) &&
-                (video_stereo_output == VIDEO_STEREO_OUTPUT_AUTO))
+        if (sys->source_3d_format == MULTIVIEW_STEREO_SBS || sys->source_3d_format == MULTIVIEW_STEREO_TB)
         {
             sys->multiview_3d = sys->device_3d_capable;
             UpdateSwapChain(vd, sys->multiview_3d);
@@ -1579,7 +1593,7 @@ static void DisplayPicture(vout_display_t *vd, ID3D11ShaderResourceView *resourc
                            d3d_quad_t *quad, bool is_subpicture )
 {
     vout_display_sys_t *sys = vd->sys;
-    int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
+    vlc_stereoscopic_3d_output_t video_stereo_output = GetStereoMode(vd, var_InheritInteger (vd, "video-stereo-mode"));
     unsigned int index_count = sys->picQuad.indexCount;
 
     if (is_subpicture)
@@ -2141,7 +2155,7 @@ static void Direct3D11Close(vout_display_t *vd)
 static void UpdatePicQuadPosition(vout_display_t *vd)
 {
     vout_display_sys_t *sys = vd->sys;
-    int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
+    vlc_stereoscopic_3d_output_t video_stereo_output = GetStereoMode(vd, var_InheritInteger (vd, "video-stereo-mode"));
 
     if (video_stereo_output == VIDEO_STEREO_OUTPUT_SIDE_BY_SIDE && sys->source_3d_format == MULTIVIEW_2D)
     {
@@ -2178,8 +2192,8 @@ static void UpdatePicQuadPosition(vout_display_t *vd)
         sys->picQuad.cropViewport[MONO_EYE].TopLeftY = sys->sys.rect_dest_clipped.top;
     }
     //For stereoscopic side by side left-right format
-    else if ((video_stereo_output == VIDEO_STEREO_OUTPUT_AUTO || video_stereo_output == VIDEO_STEREO_OUTPUT_STEREO) &&
-              (sys->source_3d_format == MULTIVIEW_STEREO_SBS) && (sys->multiview_3d))
+    else if (video_stereo_output == VIDEO_STEREO_OUTPUT_STEREO &&
+              sys->source_3d_format == MULTIVIEW_STEREO_SBS && sys->multiview_3d)
     {
         sys->picQuad.cropViewport[LEFT_EYE].Width    = RECTWidth(sys->sys.rect_dest_clipped) * 2;
         sys->picQuad.cropViewport[LEFT_EYE].Height   = RECTHeight(sys->sys.rect_dest_clipped);
@@ -2304,7 +2318,7 @@ static HRESULT CompilePixelShader(vout_display_t *vd, const d3d_format_t *format
                                   ID3D11PixelShader **output)
 {
     vout_display_sys_t *sys = vd->sys;
-    int video_stereo_output = var_InheritInteger (vd, "video-stereo-mode");
+    vlc_stereoscopic_3d_output_t video_stereo_output = GetStereoMode(vd, var_InheritInteger (vd, "video-stereo-mode"));
 
     static const char *DEFAULT_NOOP = "return rgb";
     const char *psz_sampler;
