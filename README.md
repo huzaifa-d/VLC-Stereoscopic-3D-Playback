@@ -21,6 +21,9 @@ As part of the implementation, a new menu option "3D Output" is available under 
 6. Cardboard - Outputs 2D and 3D files with a lens distoriton to be displayed as stereoscopic on Cardboard (VR) headsets.
 Stereoscopic 3D + 360 files are displayed in 3D directly on automatic detection.
 
+### Demo of the main options:
+![VLC Stereo Demo](https://github.com/theShaan/VLC-Stereoscopic-3D-Playback/blob/FinalSubmission/VLC%20Stereo.gif)
+
 Please refer to individual commits for a patch-by-patch breakdown of the project.
 To run, either fork the project or use the individual patches.
 
